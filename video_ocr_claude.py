@@ -23,7 +23,6 @@ import sys
 import time
 from pathlib import Path
 
-import anthropic
 import cv2
 import numpy as np
 

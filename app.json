@@ -1,0 +1,34 @@
+{
+  "expo": {
+    "name": "VideoOCR-Claude",
+    "slug": "video-ocr-claude",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#000000"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "PC画面を撮影してClaudeで解析するためにカメラを使用します",
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        }
+      }
+    },
+    "android": {
+      "permissions": ["CAMERA"],
+      "usesCleartextTraffic": true
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "PC画面を撮影するためにカメラを使用します"
+        }
+      ]
+    ]
+  }
+}
