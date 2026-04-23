@@ -140,7 +140,8 @@
 
 <!-- 結果 -->
 <div class="results" id="results">
-  <div class="empty-text">バックカメラでPC画面を映して<br>「📸 撮影＆解析」を押してください</div>
+  <div class="empty-text">カメラでPC画面を映して「📸 撮影＆解析」を押してください<br><br>
+    <span style="font-size:11px;color:#444">自動モード: 静止画面→3.2秒 / 動画面→30秒で自動撮影</span></div>
 </div>
 
 <script>
@@ -153,7 +154,14 @@ let autoTimer = null;
 let resultList = [];
 let currentDeviceIdx = -1;
 let videoDevices = [];
-const AUTO_INTERVAL = 5000;
+
+// 動き検出用
+const STILL_INTERVAL = 3200;     // 静止画面: 3.2秒
+const MOTION_INTERVAL = 30000;   // 動いてる画面: 30秒
+let currentInterval = STILL_INTERVAL;
+let prevFrameData = null;        // 前フレームのピクセルデータ
+let motionCheckTimer = null;     // 動き検出タイマー
+const MOTION_THRESHOLD = 5;      // 動き判定しきい値（%）
 
 const video  = document.getElementById('cameraVideo');
 const canvas = document.getElementById('cameraCanvas');
@@ -271,6 +279,60 @@ function captureFrame() {
   return canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
 }
 
+// ── 画面の動き検出 ──
+function detectMotion() {
+  if (!cameraStream || !video.videoWidth) return false;
+
+  // 小さいサイズでサンプリング（高速化）
+  const sw = 64, sh = 48;
+  canvas.width = sw;
+  canvas.height = sh;
+  ctx.drawImage(video, 0, 0, sw, sh);
+  const currentData = ctx.getImageData(0, 0, sw, sh).data;
+
+  if (!prevFrameData) {
+    prevFrameData = currentData;
+    return false;
+  }
+
+  // ピクセル差分を計算
+  let diffCount = 0;
+  const totalPixels = sw * sh;
+  for (let i = 0; i < currentData.length; i += 4) {
+    const dr = Math.abs(currentData[i] - prevFrameData[i]);
+    const dg = Math.abs(currentData[i+1] - prevFrameData[i+1]);
+    const db = Math.abs(currentData[i+2] - prevFrameData[i+2]);
+    if ((dr + dg + db) / 3 > 30) diffCount++;
+  }
+
+  prevFrameData = currentData;
+  const motionPercent = (diffCount / totalPixels) * 100;
+  const isMoving = motionPercent > MOTION_THRESHOLD;
+
+  // インターバルを動的に切り替え
+  const newInterval = isMoving ? MOTION_INTERVAL : STILL_INTERVAL;
+  if (newInterval !== currentInterval) {
+    currentInterval = newInterval;
+    const mode = isMoving ? '動画モード (30秒)' : '静止モード (3.2秒)';
+    console.log(`動き検出: ${motionPercent.toFixed(1)}% → ${mode}`);
+
+    // 自動モードが有効なら再スケジュール
+    if (autoTimer) {
+      clearInterval(autoTimer);
+      autoTimer = setInterval(() => { if (!isProcessing) captureAndAnalyze(); }, currentInterval);
+    }
+
+    // ステータス更新
+    const statusText = document.getElementById('statusText');
+    if (statusText && !isProcessing) {
+      const camInfo = statusText.textContent.match(/\(.*\)/)?.[0] || '';
+      statusText.textContent = `${mode} ${camInfo}`;
+    }
+  }
+
+  return isMoving;
+}
+
 // ── 撮影 & 解析 ──
 async function captureAndAnalyze() {
   if (isProcessing || !cameraStream) return;
@@ -344,15 +406,28 @@ async function askFollowup(idx) {
   renderResults();
 }
 
-// ── 自動モード ──
+// ── 自動モード（動き検出付き） ──
 function toggleAuto() {
   const t = document.getElementById('autoToggle');
   t.classList.toggle('on');
   if (t.classList.contains('on')) {
-    autoTimer = setInterval(() => { if (!isProcessing) captureAndAnalyze(); }, AUTO_INTERVAL);
+    // 初回は静止モード(3.2秒)で開始
+    currentInterval = STILL_INTERVAL;
+    prevFrameData = null;
+
+    // 動き検出を500msごとに実行
+    motionCheckTimer = setInterval(detectMotion, 500);
+
+    // 撮影＆解析タイマー
+    autoTimer = setInterval(() => { if (!isProcessing) captureAndAnalyze(); }, currentInterval);
+
+    document.getElementById('statusText').textContent = '自動: 静止モード (3.2秒)';
   } else {
     clearInterval(autoTimer);
+    clearInterval(motionCheckTimer);
     autoTimer = null;
+    motionCheckTimer = null;
+    document.getElementById('statusText').textContent = '待機中';
   }
 }
 
