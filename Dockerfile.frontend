@@ -1,0 +1,28 @@
+# 1. Node.jsの軽量版イメージを使用
+FROM node:18-alpine
+
+# 2. コンテナ内の作業ディレクトリを設定
+WORKDIR /app
+
+# 3. 設定ファイルをコピー
+COPY package*.json ./
+
+# 4. 標準のライブラリをインストール
+RUN npm install
+
+# 5. Web実行に必要なライブラリを強制的にインストール
+# (先ほどのエラーを解消するための重要なステップです)
+RUN npx expo install react-native-web react-dom @expo/metro-runtime
+
+# 6. プロジェクトの全ファイルをコンテナにコピー
+COPY . .
+
+# 7. Expo Web の待機ポートを開放
+EXPOSE 19006
+
+# 8. 非対面モードを有効にする環境変数
+ENV CI=1
+
+# 9. サーバーとして起動
+# --web オプションでブラウザ向けに公開します
+CMD ["npx", "expo", "start", "--web"]

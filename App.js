@@ -29,7 +29,7 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 
 // ⚠️ あなたのPCのIPアドレスに変更してください
-const BACKEND_URL = 'http://192.168.1.10:8000';
+const BACKEND_URL = 'https://x210-131-214-94.static.xvps.ne.jp/api';
 const AUTO_CAPTURE_INTERVAL_MS = 5000;
 
 export default function App() {

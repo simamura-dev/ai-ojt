@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  # --- バックエンド (Python / FastAPI) ---
+  ai-ojt-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile  # 元からあるPython用のDockerfileを使用
+    container_name: ai-ojt-container
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    restart: always
+
+  # --- フロントエンド (React Native / Expo Web) ---
+  ai-ojt-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend  # 新しく作るフロント用のDockerfileを使用
+    container_name: ai-ojt-frontend-container
+    ports:
+      - "3006:8081"  # ブラウザからは 3006 番でアクセス
+    environment:
+      - NODE_ENV=development
+      - EXPO_PACKAGER_HOSTNAME=210.131.214.94  # あなたのVPSのIP
+      - EXPO_NO_BROWSER=1
+    restart: always
