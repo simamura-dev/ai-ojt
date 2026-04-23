@@ -151,7 +151,8 @@ let cameraStream = null;
 let isProcessing = false;
 let autoTimer = null;
 let resultList = [];
-let currentFacing = 'environment';
+let currentDeviceIdx = -1;
+let videoDevices = [];
 const AUTO_INTERVAL = 5000;
 
 const video  = document.getElementById('cameraVideo');
@@ -160,8 +161,32 @@ const ctx    = canvas.getContext('2d');
 
 document.getElementById('serverInfo').textContent = `接続済み: ${BACKEND_URL}`;
 
-// ── カメラ起動（バックカメラ優先） ──
-async function startCamera(facing) {
+// ── 全カメラデバイスを列挙し、バックカメラを特定する ──
+async function enumeratecameras() {
+  // 権限を得るために一度カメラを開く（ラベルが空になる対策）
+  const tempStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+  tempStream.getTracks().forEach(t => t.stop());
+
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  videoDevices = devices.filter(d => d.kind === 'videoinput');
+
+  console.log('検出されたカメラ:', videoDevices.map(d => `${d.label} (${d.deviceId.slice(0,8)})`));
+  return videoDevices;
+}
+
+// ── ラベルからバックカメラを判定 ──
+function findBackCameraIndex(devices) {
+  const backKeywords = ['back', 'rear', 'environment', '背面', 'リア', '0'];
+  for (let i = 0; i < devices.length; i++) {
+    const label = devices[i].label.toLowerCase();
+    if (backKeywords.some(kw => label.includes(kw))) return i;
+  }
+  // キーワードに一致しない場合、最後のデバイスがバックカメラであることが多い
+  return devices.length > 1 ? devices.length - 1 : 0;
+}
+
+// ── カメラ起動 ──
+async function startCamera(deviceIndex) {
   const statusDot  = document.getElementById('statusDot');
   const statusText = document.getElementById('statusText');
 
@@ -170,37 +195,54 @@ async function startCamera(facing) {
     cameraStream = null;
   }
 
-  const mode = facing || currentFacing;
-
   try {
-    let stream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { exact: mode }, width: { ideal: 1920 }, height: { ideal: 1080 } },
-        audio: false,
-      });
-    } catch (exactErr) {
-      console.warn('exact facingMode failed:', exactErr.message);
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: mode }, width: { ideal: 1920 }, height: { ideal: 1080 } },
-        audio: false,
-      });
+    // デバイス一覧がまだなら取得
+    if (videoDevices.length === 0) {
+      await enumeratecameras();
     }
 
+    // どのカメラを使うか決定
+    let idx;
+    if (typeof deviceIndex === 'number' && deviceIndex >= 0) {
+      idx = deviceIndex;
+    } else {
+      idx = findBackCameraIndex(videoDevices);
+    }
+    currentDeviceIdx = idx;
+
+    const device = videoDevices[idx];
+    const constraints = {
+      video: {
+        deviceId: { exact: device.deviceId },
+        width:  { ideal: 1920 },
+        height: { ideal: 1080 },
+      },
+      audio: false,
+    };
+
+    console.log(`カメラ起動: [${idx}] ${device.label}`);
+
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
     cameraStream = stream;
-    currentFacing = mode;
     video.srcObject = stream;
     await video.play();
 
+    // 使用中カメラの情報表示
     const track = stream.getVideoTracks()[0];
+    const label = track.label;
     const settings = track.getSettings();
-    const label = track.label.toLowerCase();
-    const actualFacing = settings.facingMode || (label.includes('back') || label.includes('rear') || label.includes('environment') ? 'environment' : 'user');
+    const isBack = settings.facingMode === 'environment'
+      || /back|rear|背面|リア/i.test(label)
+      || (videoDevices.length > 1 && idx === videoDevices.length - 1);
+    const cameraName = isBack ? 'バックカメラ' : 'フロントカメラ';
 
     statusDot.className = 'status-dot live';
-    statusText.textContent = `待機中 (${actualFacing === 'environment' ? 'バックカメラ' : 'フロントカメラ'})`;
+    statusText.textContent = `待機中 (${cameraName}: ${label})`;
+
+    console.log(`起動完了: ${label}, facingMode: ${settings.facingMode || '不明'}`);
 
   } catch (err) {
+    console.error('Camera error:', err);
     statusDot.className = 'status-dot off';
     statusText.textContent = 'カメラエラー';
     document.getElementById('cameraArea').innerHTML = `
@@ -215,8 +257,11 @@ async function startCamera(facing) {
   }
 }
 
+// ── カメラ切替（デバイス一覧を順番に切り替える） ──
 function switchCamera() {
-  startCamera(currentFacing === 'environment' ? 'user' : 'environment');
+  if (videoDevices.length <= 1) return;
+  const nextIdx = (currentDeviceIdx + 1) % videoDevices.length;
+  startCamera(nextIdx);
 }
 
 function captureFrame() {
@@ -339,8 +384,8 @@ function renderResults() {
 
 function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>') : ''; }
 
-// ── 初期化 ──
-startCamera('environment');
+// ── 初期化（バックカメラで起動） ──
+startCamera();
 </script>
 </body>
 </html>
