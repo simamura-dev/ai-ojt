@@ -8,15 +8,34 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background: #000; font-family: -apple-system, 'Hiragino Sans', sans-serif; color: #fff; min-height: 100dvh; display: flex; flex-direction: column; }
 
-  .camera-area { position: relative; width: 100%; height: 240px; background: #111; overflow: hidden; flex-shrink: 0; }
+  /* ── モード選択（初期画面） ── */
+  .mode-bar {
+    display: flex; gap: 0; flex-shrink: 0; border-bottom: 1px solid #222;
+  }
+  .mode-btn {
+    flex: 1; padding: 12px 8px; text-align: center; font-size: 13px; font-weight: 600;
+    background: #111; border: none; color: #888; cursor: pointer; transition: all 0.2s;
+    border-bottom: 2px solid transparent;
+  }
+  .mode-btn.active { color: #fff; background: #1a1a1a; border-bottom-color: #4a90e2; }
+  .mode-btn:not(.active):hover { color: #aaa; }
+
+  /* ── カメラ ── */
+  .camera-area {
+    position: relative; width: 100%; background: #111; overflow: hidden; flex-shrink: 0;
+    transition: height 0.4s ease;
+  }
+  .camera-area.full { height: 240px; }
+  .camera-area.mini { height: 80px; }
+  .camera-area.hidden { height: 0; }
   #cameraVideo { width: 100%; height: 100%; object-fit: cover; display: block; }
   #cameraCanvas { display: none; }
   .camera-overlay {
-    position: absolute; bottom: 0; left: 0; right: 0; padding: 8px 12px;
+    position: absolute; bottom: 0; left: 0; right: 0; padding: 6px 12px;
     background: linear-gradient(transparent, rgba(0,0,0,0.8));
-    display: flex; justify-content: space-between; align-items: center; font-size: 12px;
+    display: flex; justify-content: space-between; align-items: center; font-size: 11px;
   }
-  .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 4px; }
   .status-dot.live { background: #4ade80; animation: pulse 2s infinite; }
   .status-dot.off { background: #666; }
   @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.4} }
@@ -24,128 +43,173 @@
   .camera-error {
     position: absolute; inset: 0; display: flex; flex-direction: column;
     align-items: center; justify-content: center; text-align: center;
-    background: #111; padding: 20px; gap: 12px;
+    background: #111; padding: 20px; gap: 10px;
   }
-  .camera-error p { color: #aaa; font-size: 13px; line-height: 1.6; }
-  .retry-btn { background: #4a90e2; border: none; border-radius: 8px; padding: 10px 24px; color: #fff; font-size: 13px; cursor: pointer; }
+  .camera-error p { color: #aaa; font-size: 12px; line-height: 1.5; }
 
+  /* ── スクリーンショット読込 ── */
+  .screenshot-area {
+    padding: 20px; text-align: center; display: none; flex-shrink: 0; background: #111;
+  }
+  .screenshot-area.show { display: block; }
+  .drop-zone {
+    border: 2px dashed #444; border-radius: 12px; padding: 30px; cursor: pointer;
+    transition: border-color 0.2s;
+  }
+  .drop-zone:hover, .drop-zone.drag-over { border-color: #4a90e2; }
+  .drop-zone p { color: #888; font-size: 13px; }
+  .drop-zone .icon { font-size: 28px; margin-bottom: 8px; }
+  #ssPreview { max-width: 100%; max-height: 160px; border-radius: 6px; margin-top: 10px; display: none; }
+
+  /* ── コントロール ── */
   .controls { background: #1a1a1a; padding: 10px 14px; flex-shrink: 0; }
   .prompt-input {
     width: 100%; background: #2a2a2a; border: 1px solid #3a3a3a; border-radius: 8px;
-    padding: 10px; color: #fff; font-size: 13px; resize: none; outline: none;
-    font-family: inherit; min-height: 44px;
+    padding: 8px 10px; color: #fff; font-size: 13px; resize: none; outline: none;
+    font-family: inherit; min-height: 40px;
   }
   .prompt-input:focus { border-color: #4a90e2; }
-  .button-row { display: flex; gap: 10px; margin-top: 8px; align-items: center; }
+  .button-row { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
   .capture-btn {
     flex: 1; background: #4a90e2; border: none; border-radius: 8px;
-    padding: 12px; color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s;
+    padding: 11px; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;
   }
   .capture-btn:hover { background: #3a80d2; }
-  .capture-btn:active { background: #2a70c2; transform: scale(0.97); }
+  .capture-btn:active { transform: scale(0.97); }
   .capture-btn:disabled { opacity: 0.5; pointer-events: none; }
-  .auto-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #aaa; }
+  .auto-toggle { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #aaa; }
   .toggle-switch {
-    width: 44px; height: 24px; background: #3a3a3a; border-radius: 12px;
+    width: 40px; height: 22px; background: #3a3a3a; border-radius: 11px;
     position: relative; cursor: pointer; transition: background 0.3s;
   }
   .toggle-switch.on { background: #4ade80; }
   .toggle-switch::after {
-    content: ''; position: absolute; width: 20px; height: 20px;
+    content: ''; position: absolute; width: 18px; height: 18px;
     background: #fff; border-radius: 50%; top: 2px; left: 2px; transition: left 0.3s;
   }
-  .toggle-switch.on::after { left: 22px; }
+  .toggle-switch.on::after { left: 20px; }
 
+  /* ── 処理中インジケーター ── */
+  .processing-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+    z-index: 100; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+  }
+  .processing-overlay.show { display: flex; }
+  .processing-spinner { width: 40px; height: 40px; border: 3px solid #333; border-top-color: #4a90e2; border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to{transform:rotate(360deg)} }
+  .processing-text { color: #aaa; font-size: 13px; }
+  .processing-step { color: #4a90e2; font-size: 11px; margin-top: 4px; }
+
+  /* ── 結果表示 ── */
   .results { flex: 1; overflow-y: auto; padding: 10px 14px; }
   .results::-webkit-scrollbar { width: 4px; }
   .results::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
 
-  .result-card { background: #1a1a1a; border-radius: 10px; padding: 12px; margin-bottom: 10px; animation: slideUp 0.4s ease-out; }
-  @keyframes slideUp { from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)} }
+  .result-card { background: #1a1a1a; border-radius: 10px; padding: 12px; margin-bottom: 10px; animation: slideUp 0.3s ease-out; }
+  @keyframes slideUp { from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)} }
 
-  .result-time { color: #666; font-size: 11px; margin-bottom: 8px; }
-  .badge { font-size: 9px; padding: 2px 8px; border-radius: 10px; font-weight: 600; background: #4a90e2; color: #fff; margin-left: 6px; }
+  .result-time { color: #555; font-size: 10px; margin-bottom: 6px; }
+  .badge { font-size: 9px; padding: 2px 6px; border-radius: 8px; font-weight: 600; background: #4a90e2; color: #fff; margin-left: 4px; }
 
-  .section { margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid #2a2a2a; }
-  .section-title { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+  /* 画面特定セクション */
+  .what-is-box { background: #1a2030; border-left: 3px solid #60a5fa; border-radius: 8px; padding: 10px; margin-bottom: 8px; }
+  .what-is-title { color: #60a5fa; font-size: 12px; font-weight: 700; margin-bottom: 4px; }
+
+  .section { margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid #2a2a2a; }
+  .section-title { font-size: 11px; font-weight: 700; margin-bottom: 4px; }
   .section-title.analysis { color: #4a90e2; }
   .section-title.nextsteps { color: #4ade80; }
+  .section-title.warning { color: #f59e0b; }
 
-  .next-steps-box { background: #1c2a1c; border-left: 3px solid #4ade80; border-radius: 8px; padding: 10px; margin-bottom: 12px; }
-  .body-text { font-size: 13px; line-height: 1.7; color: #e5e5e5; white-space: pre-wrap; }
+  .next-steps-box { background: #1c2a1c; border-left: 3px solid #4ade80; border-radius: 8px; padding: 10px; margin-bottom: 8px; }
+  .warning-box { background: #2a2010; border-left: 3px solid #f59e0b; border-radius: 8px; padding: 10px; margin-bottom: 8px; }
 
-  .followup-block { margin: 8px 0; padding-left: 10px; border-left: 2px solid #555; }
-  .q-text { color: #ffd166; font-size: 12px; font-weight: 600; margin-bottom: 3px; }
-  .a-text { color: #e5e5e5; font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
+  .body-text { font-size: 13px; line-height: 1.6; color: #e5e5e5; white-space: pre-wrap; }
 
-  .followup-row { display: flex; gap: 8px; margin-top: 10px; }
+  .followup-block { margin: 6px 0; padding-left: 10px; border-left: 2px solid #444; }
+  .q-text { color: #ffd166; font-size: 11px; font-weight: 600; margin-bottom: 2px; }
+  .a-text { color: #e5e5e5; font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
+
+  .followup-row { display: flex; gap: 6px; margin-top: 8px; }
   .followup-input {
     flex: 1; background: #2a2a2a; border: 1px solid #3a3a3a; border-radius: 6px;
-    padding: 8px 10px; color: #fff; font-size: 12px; outline: none; font-family: inherit;
+    padding: 7px 10px; color: #fff; font-size: 12px; outline: none; font-family: inherit;
   }
-  .followup-input:focus { border-color: #4a90e2; }
-  .ask-btn { background: #4a90e2; border: none; border-radius: 6px; padding: 8px 14px; color: #fff; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .ask-btn { background: #4a90e2; border: none; border-radius: 6px; padding: 7px 12px; color: #fff; font-size: 11px; font-weight: 600; cursor: pointer; }
 
-  .ocr-toggle { color: #555; font-size: 10px; margin-top: 10px; cursor: pointer; }
-  .ocr-toggle:hover { color: #888; }
-  .ocr-text { color: #555; font-size: 10px; font-family: 'Courier New', monospace; line-height: 1.5; margin-top: 4px; white-space: pre-wrap; display: none; }
+  .ocr-toggle { color: #444; font-size: 10px; margin-top: 8px; cursor: pointer; }
+  .ocr-text { color: #444; font-size: 9px; font-family: monospace; line-height: 1.4; margin-top: 3px; white-space: pre-wrap; display: none; }
   .ocr-text.show { display: block; }
 
-  .empty-text { color: #555; text-align: center; padding: 40px 20px; font-size: 13px; line-height: 1.8; }
+  .expand-cam-btn { text-align: center; padding: 6px; color: #4a90e2; font-size: 11px; cursor: pointer; }
 
-  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.8s linear infinite; }
-  @keyframes spin { to{transform:rotate(360deg)} }
+  .empty-text { color: #555; text-align: center; padding: 30px 20px; font-size: 13px; line-height: 1.7; }
 
-  .server-bar {
-    background: #1a1a1a; padding: 6px 14px; font-size: 11px; color: #666;
-    display: flex; align-items: center; gap: 8px; flex-shrink: 0; border-bottom: 1px solid #222;
-  }
-  .server-bar .connect-dot { width: 8px; height: 8px; border-radius: 50%; background: #4ade80; flex-shrink: 0; }
-  .server-bar .connect-dot.ok { background: #4ade80; }
-  .server-bar .connect-dot.err { background: #ef4444; }
+  .spinner-sm { display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.8s linear infinite; }
+
+  /* ── 非表示ファイル入力 ── */
+  #ssFileInput { display: none; }
 </style>
 </head>
 <body>
 
-<!-- サーバー接続バー -->
-<div class="server-bar">
-  <div class="connect-dot ok" id="connectDot"></div>
-  <span id="serverInfo">接続済み</span>
+<!-- モード選択バー（常時表示） -->
+<div class="mode-bar">
+  <button class="mode-btn" id="modeSS" onclick="setMode('screenshot')">🖼️ スクリーンショット</button>
+  <button class="mode-btn active" id="modeStill" onclick="setMode('still')">📷 カメラ撮影</button>
+  <button class="mode-btn" id="modeVideo" onclick="setMode('video')">🎬 動画撮影</button>
 </div>
 
-<!-- カメラプレビュー（バックカメラ） -->
-<div class="camera-area" id="cameraArea">
+<!-- カメラプレビュー -->
+<div class="camera-area full" id="cameraArea">
   <video id="cameraVideo" autoplay playsinline muted></video>
   <canvas id="cameraCanvas"></canvas>
   <div class="camera-overlay">
-    <span><span class="status-dot" id="statusDot"></span><span id="statusText">カメラ起動中...</span></span>
-    <span style="display:flex;align-items:center;gap:8px">
-      <button onclick="switchCamera()" style="background:rgba(255,255,255,0.2);border:none;color:#fff;padding:4px 10px;border-radius:4px;font-size:11px;cursor:pointer">🔄 カメラ切替</button>
-      <span id="timeStamp" style="font-size:10px;color:#888"></span>
+    <span><span class="status-dot" id="statusDot"></span><span id="statusText">起動中...</span></span>
+    <span style="display:flex;align-items:center;gap:6px">
+      <button onclick="switchCamera()" style="background:rgba(255,255,255,0.2);border:none;color:#fff;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer">🔄</button>
+      <span id="timeStamp" style="font-size:9px;color:#666"></span>
     </span>
   </div>
 </div>
 
+<!-- スクリーンショット読込エリア -->
+<div class="screenshot-area" id="ssArea">
+  <div class="drop-zone" id="dropZone" onclick="document.getElementById('ssFileInput').click()">
+    <div class="icon">📁</div>
+    <p>タップして画像を選択<br><span style="font-size:11px;color:#666">またはドラッグ＆ドロップ</span></p>
+  </div>
+  <img id="ssPreview">
+  <input type="file" id="ssFileInput" accept="image/*">
+</div>
+
 <!-- コントロール -->
 <div class="controls">
-  <textarea class="prompt-input" id="promptInput" rows="2" placeholder="Claude への質問・指示">画面に表示されている内容を分析して、改善点を教えて</textarea>
+  <textarea class="prompt-input" id="promptInput" rows="1" placeholder="質問（省略可）"></textarea>
   <div class="button-row">
-    <button class="capture-btn" id="captureBtn" onclick="captureAndAnalyze()">📸 撮影＆解析</button>
-    <div class="auto-toggle">
+    <button class="capture-btn" id="captureBtn" onclick="captureAndAnalyze()">📸 解析</button>
+    <div class="auto-toggle" id="autoToggleWrap">
       <span>自動</span>
       <div class="toggle-switch" id="autoToggle" onclick="toggleAuto()"></div>
     </div>
   </div>
 </div>
 
-<!-- 結果 -->
-<div class="results" id="results">
-  <div class="empty-text">カメラでPC画面を映して「📸 撮影＆解析」を押してください<br><br>
-    <span style="font-size:11px;color:#444">自動モード: 静止画面→3.2秒 / 動画面→30秒で自動撮影</span></div>
+<!-- 処理中オーバーレイ -->
+<div class="processing-overlay" id="processingOverlay">
+  <div class="processing-spinner"></div>
+  <div class="processing-text" id="processingText">画像を送信中...</div>
+  <div class="processing-step" id="processingStep"></div>
 </div>
 
+<!-- 結果 -->
+<div class="results" id="results">
+  <div class="empty-text">カメラまたはスクリーンショットで<br>画面を読み込んで解析します</div>
+</div>
+
+<input type="file" id="ssFileInput" accept="image/*">
+
 <script>
-// ★ サーバーURLはこのHTMLを配信しているホストから自動取得
 const BACKEND_URL = window.location.origin;
 
 let cameraStream = null;
@@ -154,122 +218,141 @@ let autoTimer = null;
 let resultList = [];
 let currentDeviceIdx = -1;
 let videoDevices = [];
+let currentMode = 'still'; // 'still' | 'video' | 'screenshot'
+let screenshotBase64 = null;
 
-// 動き検出用
-const STILL_INTERVAL = 3200;     // 静止画面: 3.2秒
-const MOTION_INTERVAL = 30000;   // 動いてる画面: 30秒
+const STILL_INTERVAL = 3200;
+const MOTION_INTERVAL = 30000;
 let currentInterval = STILL_INTERVAL;
-let prevFrameData = null;        // 前フレームのピクセルデータ
-let motionCheckTimer = null;     // 動き検出タイマー
-const MOTION_THRESHOLD = 5;      // 動き判定しきい値（%）
+let prevFrameData = null;
+let motionCheckTimer = null;
+const MOTION_THRESHOLD = 5;
 
 const video  = document.getElementById('cameraVideo');
 const canvas = document.getElementById('cameraCanvas');
 const ctx    = canvas.getContext('2d');
 
-document.getElementById('serverInfo').textContent = `接続済み: ${BACKEND_URL}`;
+// ══════════════════════════════════════
+// モード切替
+// ══════════════════════════════════════
+function setMode(mode) {
+  currentMode = mode;
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
 
-// ── 全カメラデバイスを列挙し、バックカメラを特定する ──
+  const cam = document.getElementById('cameraArea');
+  const ss  = document.getElementById('ssArea');
+  const autoWrap = document.getElementById('autoToggleWrap');
+  const btn = document.getElementById('captureBtn');
+
+  if (mode === 'screenshot') {
+    document.getElementById('modeSS').classList.add('active');
+    cam.className = 'camera-area hidden';
+    ss.classList.add('show');
+    autoWrap.style.display = 'none';
+    btn.textContent = '🖼️ スクリーンショット解析';
+    if (autoTimer) { toggleAuto(); }
+  } else if (mode === 'still') {
+    document.getElementById('modeStill').classList.add('active');
+    cam.className = 'camera-area full';
+    ss.classList.remove('show');
+    autoWrap.style.display = 'flex';
+    btn.textContent = '📷 カメラ撮影＆解析';
+    currentInterval = STILL_INTERVAL;
+  } else if (mode === 'video') {
+    document.getElementById('modeVideo').classList.add('active');
+    cam.className = 'camera-area full';
+    ss.classList.remove('show');
+    autoWrap.style.display = 'flex';
+    btn.textContent = '🎬 動画撮影＆解析 (30s)';
+    currentInterval = MOTION_INTERVAL;
+  }
+}
+
+// ══════════════════════════════════════
+// スクリーンショット読込
+// ══════════════════════════════════════
+const ssFileInput = document.getElementById('ssFileInput');
+const dropZone = document.getElementById('dropZone');
+
+ssFileInput.addEventListener('change', (e) => {
+  if (e.target.files[0]) loadScreenshot(e.target.files[0]);
+});
+
+dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) loadScreenshot(e.dataTransfer.files[0]);
+});
+
+function loadScreenshot(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    screenshotBase64 = e.target.result.split(',')[1];
+    const preview = document.getElementById('ssPreview');
+    preview.src = e.target.result;
+    preview.style.display = 'block';
+    dropZone.querySelector('p').textContent = file.name;
+  };
+  reader.readAsDataURL(file);
+}
+
+// ══════════════════════════════════════
+// カメラ
+// ══════════════════════════════════════
 async function enumeratecameras() {
-  // 権限を得るために一度カメラを開く（ラベルが空になる対策）
   const tempStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
   tempStream.getTracks().forEach(t => t.stop());
-
   const devices = await navigator.mediaDevices.enumerateDevices();
   videoDevices = devices.filter(d => d.kind === 'videoinput');
-
-  console.log('検出されたカメラ:', videoDevices.map(d => `${d.label} (${d.deviceId.slice(0,8)})`));
   return videoDevices;
 }
 
-// ── ラベルからバックカメラを判定 ──
 function findBackCameraIndex(devices) {
-  const backKeywords = ['back', 'rear', 'environment', '背面', 'リア', '0'];
+  const kw = ['back', 'rear', 'environment', '背面', 'リア', '0'];
   for (let i = 0; i < devices.length; i++) {
-    const label = devices[i].label.toLowerCase();
-    if (backKeywords.some(kw => label.includes(kw))) return i;
+    if (kw.some(k => devices[i].label.toLowerCase().includes(k))) return i;
   }
-  // キーワードに一致しない場合、最後のデバイスがバックカメラであることが多い
   return devices.length > 1 ? devices.length - 1 : 0;
 }
 
-// ── カメラ起動 ──
 async function startCamera(deviceIndex) {
-  const statusDot  = document.getElementById('statusDot');
+  const statusDot = document.getElementById('statusDot');
   const statusText = document.getElementById('statusText');
-
-  if (cameraStream) {
-    cameraStream.getTracks().forEach(t => t.stop());
-    cameraStream = null;
-  }
+  if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }
 
   try {
-    // デバイス一覧がまだなら取得
-    if (videoDevices.length === 0) {
-      await enumeratecameras();
-    }
-
-    // どのカメラを使うか決定
-    let idx;
-    if (typeof deviceIndex === 'number' && deviceIndex >= 0) {
-      idx = deviceIndex;
-    } else {
-      idx = findBackCameraIndex(videoDevices);
-    }
+    if (videoDevices.length === 0) await enumeratecameras();
+    let idx = (typeof deviceIndex === 'number' && deviceIndex >= 0) ? deviceIndex : findBackCameraIndex(videoDevices);
     currentDeviceIdx = idx;
-
     const device = videoDevices[idx];
-    const constraints = {
-      video: {
-        deviceId: { exact: device.deviceId },
-        width:  { ideal: 1920 },
-        height: { ideal: 1080 },
-      },
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { deviceId: { exact: device.deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } },
       audio: false,
-    };
-
-    console.log(`カメラ起動: [${idx}] ${device.label}`);
-
-    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    });
     cameraStream = stream;
     video.srcObject = stream;
     await video.play();
 
-    // 使用中カメラの情報表示
     const track = stream.getVideoTracks()[0];
     const label = track.label;
     const settings = track.getSettings();
-    const isBack = settings.facingMode === 'environment'
-      || /back|rear|背面|リア/i.test(label)
-      || (videoDevices.length > 1 && idx === videoDevices.length - 1);
-    const cameraName = isBack ? 'バックカメラ' : 'フロントカメラ';
+    const isBack = settings.facingMode === 'environment' || /back|rear|背面|リア/i.test(label) || (videoDevices.length > 1 && idx === videoDevices.length - 1);
 
     statusDot.className = 'status-dot live';
-    statusText.textContent = `待機中 (${cameraName}: ${label})`;
-
-    console.log(`起動完了: ${label}, facingMode: ${settings.facingMode || '不明'}`);
-
+    statusText.textContent = isBack ? 'バックカメラ' : 'フロントカメラ';
   } catch (err) {
-    console.error('Camera error:', err);
     statusDot.className = 'status-dot off';
     statusText.textContent = 'カメラエラー';
-    document.getElementById('cameraArea').innerHTML = `
-      <div class="camera-error">
-        <p>⚠️ カメラにアクセスできません<br><br>
-        <strong>原因:</strong> ${err.name === 'NotAllowedError' ? 'カメラの使用が許可されていません。ブラウザの設定からカメラを許可してください。' : err.message}<br><br>
-        <strong>ヒント:</strong><br>
-        ・HTTPS または localhost でアクセスしてください<br>
-        ・ブラウザのアドレスバー左のカメラアイコンから許可できます</p>
-        <button class="retry-btn" onclick="location.reload()">再試行</button>
-      </div>`;
+    document.getElementById('cameraArea').innerHTML = `<div class="camera-error"><p>⚠️ カメラにアクセスできません<br>${err.message}</p><button class="capture-btn" onclick="location.reload()" style="margin-top:8px;padding:8px 20px">再試行</button></div>`;
   }
 }
 
-// ── カメラ切替（デバイス一覧を順番に切り替える） ──
 function switchCamera() {
   if (videoDevices.length <= 1) return;
-  const nextIdx = (currentDeviceIdx + 1) % videoDevices.length;
-  startCamera(nextIdx);
+  startCamera((currentDeviceIdx + 1) % videoDevices.length);
 }
 
 function captureFrame() {
@@ -279,80 +362,76 @@ function captureFrame() {
   return canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
 }
 
-// ── 画面の動き検出 ──
+// ══════════════════════════════════════
+// 動き検出
+// ══════════════════════════════════════
 function detectMotion() {
-  if (!cameraStream || !video.videoWidth) return false;
-
-  // 小さいサイズでサンプリング（高速化）
+  if (!cameraStream || !video.videoWidth) return;
   const sw = 64, sh = 48;
-  canvas.width = sw;
-  canvas.height = sh;
+  canvas.width = sw; canvas.height = sh;
   ctx.drawImage(video, 0, 0, sw, sh);
-  const currentData = ctx.getImageData(0, 0, sw, sh).data;
-
-  if (!prevFrameData) {
-    prevFrameData = currentData;
-    return false;
+  const cur = ctx.getImageData(0, 0, sw, sh).data;
+  if (!prevFrameData) { prevFrameData = cur; return; }
+  let diff = 0;
+  for (let i = 0; i < cur.length; i += 4) {
+    if ((Math.abs(cur[i]-prevFrameData[i]) + Math.abs(cur[i+1]-prevFrameData[i+1]) + Math.abs(cur[i+2]-prevFrameData[i+2])) / 3 > 30) diff++;
   }
+  prevFrameData = cur;
+  const pct = (diff / (sw * sh)) * 100;
+  const moving = pct > MOTION_THRESHOLD;
 
-  // ピクセル差分を計算
-  let diffCount = 0;
-  const totalPixels = sw * sh;
-  for (let i = 0; i < currentData.length; i += 4) {
-    const dr = Math.abs(currentData[i] - prevFrameData[i]);
-    const dg = Math.abs(currentData[i+1] - prevFrameData[i+1]);
-    const db = Math.abs(currentData[i+2] - prevFrameData[i+2]);
-    if ((dr + dg + db) / 3 > 30) diffCount++;
-  }
-
-  prevFrameData = currentData;
-  const motionPercent = (diffCount / totalPixels) * 100;
-  const isMoving = motionPercent > MOTION_THRESHOLD;
-
-  // インターバルを動的に切り替え
-  const newInterval = isMoving ? MOTION_INTERVAL : STILL_INTERVAL;
+  // 自動モードでインターバルだけ切り替え（モード選択は変えない）
+  const newInterval = moving ? MOTION_INTERVAL : STILL_INTERVAL;
   if (newInterval !== currentInterval) {
     currentInterval = newInterval;
-    const mode = isMoving ? '動画モード (30秒)' : '静止モード (3.2秒)';
-    console.log(`動き検出: ${motionPercent.toFixed(1)}% → ${mode}`);
-
-    // 自動モードが有効なら再スケジュール
     if (autoTimer) {
       clearInterval(autoTimer);
       autoTimer = setInterval(() => { if (!isProcessing) captureAndAnalyze(); }, currentInterval);
     }
-
-    // ステータス更新
-    const statusText = document.getElementById('statusText');
-    if (statusText && !isProcessing) {
-      const camInfo = statusText.textContent.match(/\(.*\)/)?.[0] || '';
-      statusText.textContent = `${mode} ${camInfo}`;
-    }
   }
-
-  return isMoving;
 }
 
-// ── 撮影 & 解析 ──
+// ══════════════════════════════════════
+// 処理中オーバーレイ
+// ══════════════════════════════════════
+function showProcessing(text, step) {
+  document.getElementById('processingText').textContent = text;
+  document.getElementById('processingStep').textContent = step || '';
+  document.getElementById('processingOverlay').classList.add('show');
+}
+function hideProcessing() {
+  document.getElementById('processingOverlay').classList.remove('show');
+}
+
+// ══════════════════════════════════════
+// 撮影 & 解析
+// ══════════════════════════════════════
 async function captureAndAnalyze() {
-  if (isProcessing || !cameraStream) return;
+  if (isProcessing) return;
   isProcessing = true;
 
   const btn = document.getElementById('captureBtn');
-  const statusText = document.getElementById('statusText');
-  const timeStamp = document.getElementById('timeStamp');
-
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> 解析中...';
-  statusText.textContent = '撮影・解析中...';
+
+  showProcessing('画像を送信中...', 'Claude に解析をリクエストしています');
 
   const now = new Date();
   const timeStr = now.toLocaleTimeString();
-  timeStamp.textContent = `📸 ${timeStr}`;
+  document.getElementById('timeStamp').textContent = timeStr;
 
   try {
-    const base64 = captureFrame();
+    let base64;
+    if (currentMode === 'screenshot') {
+      if (!screenshotBase64) { alert('画像を選択してください'); return; }
+      base64 = screenshotBase64;
+    } else {
+      if (!cameraStream) { alert('カメラが起動していません'); return; }
+      base64 = captureFrame();
+    }
+
     const prompt = document.getElementById('promptInput').value || null;
+
+    showProcessing('Claude が解析中...', 'テキスト抽出 → 分析 → アクション提案');
 
     const res = await fetch(`${BACKEND_URL}/analyze`, {
       method: 'POST',
@@ -363,34 +442,35 @@ async function captureAndAnalyze() {
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
     const data = await res.json();
 
-    statusText.textContent = `解析完了 (${data.elapsed_ms}ms)`;
-    document.getElementById('connectDot').className = 'connect-dot ok';
+    // 解析完了 → カメラを縮小して結果表示へ
+    if (currentMode !== 'screenshot') {
+      document.getElementById('cameraArea').className = 'camera-area mini';
+    }
 
     addResult({ time: timeStr, elapsed: data.elapsed_ms, ocr: data.ocr_text, analysis: data.analysis, nextSteps: data.next_steps, followups: [] });
+    document.getElementById('statusText').textContent = `完了 ${data.elapsed_ms}ms`;
 
   } catch (err) {
-    statusText.textContent = `エラー: ${err.message}`;
-    document.getElementById('connectDot').className = 'connect-dot err';
-    alert(`解析に失敗しました\n\n${err.message}`);
+    document.getElementById('statusText').textContent = 'エラー';
+    alert(`解析失敗: ${err.message}`);
   } finally {
     isProcessing = false;
     btn.disabled = false;
-    btn.innerHTML = '📸 撮影＆解析';
+    hideProcessing();
   }
 }
 
-// ── 追加質問 ──
+// ══════════════════════════════════════
+// 追加質問
+// ══════════════════════════════════════
 async function askFollowup(idx) {
   const input = document.getElementById(`followup-${idx}`);
   if (!input || !input.value.trim()) return;
-
   const question = input.value;
   input.value = '';
   const r = resultList[idx];
-
-  r.followups.push({ question, answer: '回答を生成中...' });
+  r.followups.push({ question, answer: '回答中...' });
   renderResults();
-
   try {
     const res = await fetch(`${BACKEND_URL}/followup`, {
       method: 'POST',
@@ -406,32 +486,25 @@ async function askFollowup(idx) {
   renderResults();
 }
 
-// ── 自動モード（動き検出付き） ──
+// ══════════════════════════════════════
+// 自動モード
+// ══════════════════════════════════════
 function toggleAuto() {
   const t = document.getElementById('autoToggle');
   t.classList.toggle('on');
   if (t.classList.contains('on')) {
-    // 初回は静止モード(3.2秒)で開始
-    currentInterval = STILL_INTERVAL;
     prevFrameData = null;
-
-    // 動き検出を500msごとに実行
     motionCheckTimer = setInterval(detectMotion, 500);
-
-    // 撮影＆解析タイマー
     autoTimer = setInterval(() => { if (!isProcessing) captureAndAnalyze(); }, currentInterval);
-
-    document.getElementById('statusText').textContent = '自動: 静止モード (3.2秒)';
   } else {
-    clearInterval(autoTimer);
-    clearInterval(motionCheckTimer);
-    autoTimer = null;
-    motionCheckTimer = null;
-    document.getElementById('statusText').textContent = '待機中';
+    clearInterval(autoTimer); clearInterval(motionCheckTimer);
+    autoTimer = null; motionCheckTimer = null;
   }
 }
 
-// ── 結果描画 ──
+// ══════════════════════════════════════
+// 結果描画
+// ══════════════════════════════════════
 function addResult(r) {
   resultList.unshift(r);
   if (resultList.length > 20) resultList.pop();
@@ -441,25 +514,34 @@ function addResult(r) {
 function renderResults() {
   const c = document.getElementById('results');
   if (resultList.length === 0) {
-    c.innerHTML = '<div class="empty-text">バックカメラでPC画面を映して<br>「📸 撮影＆解析」を押してください</div>';
+    c.innerHTML = '<div class="empty-text">カメラまたはスクリーンショットで<br>画面を読み込んで解析します</div>';
     return;
   }
   c.innerHTML = resultList.map((r, idx) => {
     const latest = idx === 0;
-    let h = `<div class="result-card" style="opacity:${latest?'1':'0.7'}">`;
+    let h = `<div class="result-card" style="opacity:${latest?'1':'0.6'}">`;
     h += `<div class="result-time">${r.time} (${r.elapsed}ms) ${latest?'<span class="badge">最新</span>':''}</div>`;
-    if (r.analysis) h += `<div class="section"><div class="section-title analysis">🧠 Claude の分析</div><div class="body-text">${esc(r.analysis)}</div></div>`;
-    if (r.nextSteps) h += `<div class="next-steps-box"><div class="section-title nextsteps">✨ 次にやるべきこと</div><div class="body-text">${esc(r.nextSteps)}</div></div>`;
+
+    if (r.analysis) h += `<div class="section"><div class="section-title analysis">🧠 分析</div><div class="body-text">${esc(r.analysis)}</div></div>`;
+    if (r.nextSteps) h += `<div class="next-steps-box"><div class="section-title nextsteps">✨ 次にやること</div><div class="body-text">${esc(r.nextSteps)}</div></div>`;
+
     r.followups.forEach(f => { h += `<div class="followup-block"><div class="q-text">❓ ${esc(f.question)}</div><div class="a-text">${esc(f.answer)}</div></div>`; });
-    h += `<div class="followup-row"><input class="followup-input" id="followup-${idx}" placeholder="追加で質問する..." onkeydown="if(event.key==='Enter'){event.preventDefault();askFollowup(${idx})}"><button class="ask-btn" onclick="askFollowup(${idx})">質問</button></div>`;
-    h += `<div class="ocr-toggle" onclick="this.nextElementSibling.classList.toggle('show')">📝 画面テキスト ▼</div><div class="ocr-text">${esc(r.ocr)}</div></div>`;
+
+    h += `<div class="followup-row"><input class="followup-input" id="followup-${idx}" placeholder="追加質問..." onkeydown="if(event.key==='Enter'){event.preventDefault();askFollowup(${idx})}"><button class="ask-btn" onclick="askFollowup(${idx})">質問</button></div>`;
+    h += `<div class="ocr-toggle" onclick="this.nextElementSibling.classList.toggle('show')">📝 テキスト ▼</div><div class="ocr-text">${esc(r.ocr)}</div>`;
+
+    // カメラ再表示ボタン（最新カードのみ）
+    if (latest) h += `<div class="expand-cam-btn" onclick="document.getElementById('cameraArea').className='camera-area full'">📷 カメラを再表示</div>`;
+    h += `</div>`;
     return h;
   }).join('');
 }
 
 function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>') : ''; }
 
-// ── 初期化（バックカメラで起動） ──
+// ══════════════════════════════════════
+// 初期化
+// ══════════════════════════════════════
 startCamera();
 </script>
 </body>
