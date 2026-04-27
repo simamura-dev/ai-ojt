@@ -27,6 +27,9 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, W
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from fastapi.responses import FileResponse
+import os
+
 # 既存のOCR処理を流用
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from video_ocr_claude import (
@@ -44,6 +47,9 @@ from video_ocr_claude import (
 # ──────────────────────────────────────────────
 app = FastAPI(title="Video OCR + Claude API")
 
+@app.get("/", include_in_schema=False)
+async def read_index():
+    return FileResponse("index.html")
 # CORS（スマホアプリからのアクセスを許可）
 app.add_middleware(
     CORSMiddleware,
