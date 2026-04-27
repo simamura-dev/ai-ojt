@@ -61,6 +61,29 @@
   .drop-zone .icon { font-size: 28px; margin-bottom: 8px; }
   #ssPreview { max-width: 100%; max-height: 160px; border-radius: 6px; margin-top: 10px; display: none; }
 
+  /* ── 撮影プレビュー（カメラ撮影モード用） ── */
+  .capture-preview {
+    display: none; flex-shrink: 0; background: #111; padding: 10px; text-align: center;
+  }
+  .capture-preview.show { display: block; }
+  .capture-preview img {
+    max-width: 100%; max-height: 200px; border-radius: 8px; border: 2px solid #4a90e2;
+  }
+  .capture-preview .preview-label {
+    color: #4a90e2; font-size: 11px; font-weight: 600; margin-top: 6px;
+  }
+  .preview-actions {
+    display: flex; gap: 8px; justify-content: center; margin-top: 10px;
+  }
+  .preview-actions button {
+    padding: 9px 20px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .preview-actions .analyze-btn { background: #4ade80; color: #000; }
+  .preview-actions .analyze-btn:hover { background: #3bce70; }
+  .preview-actions .retake-btn { background: #3a3a3a; color: #fff; }
+  .preview-actions .retake-btn:hover { background: #4a4a4a; }
+
   /* ── コントロール ── */
   .controls { background: #1a1a1a; padding: 10px 14px; flex-shrink: 0; }
   .prompt-input {
@@ -183,6 +206,16 @@
   <input type="file" id="ssFileInput" accept="image/*">
 </div>
 
+<!-- 撮影プレビュー（カメラ撮影モード用） -->
+<div class="capture-preview" id="capturePreview">
+  <img id="capturePreviewImg" src="">
+  <div class="preview-label">📷 撮影画像</div>
+  <div class="preview-actions">
+    <button class="retake-btn" onclick="retakePhoto()">🔄 撮り直す</button>
+    <button class="analyze-btn" onclick="analyzePreview()">🧠 この画像を解析</button>
+  </div>
+</div>
+
 <!-- コントロール -->
 <div class="controls">
   <textarea class="prompt-input" id="promptInput" rows="1" placeholder="質問（省略可）"></textarea>
@@ -220,6 +253,7 @@ let currentDeviceIdx = -1;
 let videoDevices = [];
 let currentMode = 'still'; // 'still' | 'video' | 'screenshot'
 let screenshotBase64 = null;
+let capturedBase64 = null; // カメラ撮影モードで撮影済み画像を保持
 
 const STILL_INTERVAL = 3200;
 const MOTION_INTERVAL = 30000;
@@ -256,7 +290,7 @@ function setMode(mode) {
     cam.className = 'camera-area full';
     ss.classList.remove('show');
     autoWrap.style.display = 'flex';
-    btn.textContent = '📷 カメラ撮影＆解析';
+    btn.textContent = '📷 撮影する';
     currentInterval = STILL_INTERVAL;
   } else if (mode === 'video') {
     document.getElementById('modeVideo').classList.add('active');
@@ -408,16 +442,32 @@ function hideProcessing() {
 // ══════════════════════════════════════
 async function captureAndAnalyze() {
   if (isProcessing) return;
-  isProcessing = true;
-
-  const btn = document.getElementById('captureBtn');
-  btn.disabled = true;
-
-  showProcessing('画像を送信中...', 'Claude に解析をリクエストしています');
 
   const now = new Date();
   const timeStr = now.toLocaleTimeString();
   document.getElementById('timeStamp').textContent = timeStr;
+
+  // ── カメラ撮影モード → まず撮影してプレビュー表示 ──
+  if (currentMode === 'still') {
+    if (!cameraStream) { alert('カメラが起動していません'); return; }
+    capturedBase64 = captureFrame();
+
+    // プレビュー画像を表示
+    const previewImg = document.getElementById('capturePreviewImg');
+    previewImg.src = 'data:image/jpeg;base64,' + capturedBase64;
+    document.getElementById('capturePreview').classList.add('show');
+
+    // カメラを縮小してプレビューを見せる
+    document.getElementById('cameraArea').className = 'camera-area mini';
+    return; // ← ここで止める。解析は analyzePreview() で行う
+  }
+
+  // ── スクリーンショット / 動画モード → 従来通り即解析 ──
+  isProcessing = true;
+  const btn = document.getElementById('captureBtn');
+  btn.disabled = true;
+
+  showProcessing('画像を送信中...', 'Claude に解析をリクエストしています');
 
   try {
     let base64;
@@ -442,13 +492,66 @@ async function captureAndAnalyze() {
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
     const data = await res.json();
 
-    // 解析完了 → カメラを縮小して結果表示へ
     if (currentMode !== 'screenshot') {
       document.getElementById('cameraArea').className = 'camera-area mini';
     }
 
     addResult({ time: timeStr, elapsed: data.elapsed_ms, ocr: data.ocr_text, analysis: data.analysis, nextSteps: data.next_steps, followups: [] });
     document.getElementById('statusText').textContent = `完了 ${data.elapsed_ms}ms`;
+
+  } catch (err) {
+    document.getElementById('statusText').textContent = 'エラー';
+    alert(`解析失敗: ${err.message}`);
+  } finally {
+    isProcessing = false;
+    btn.disabled = false;
+    hideProcessing();
+  }
+}
+
+// ══════════════════════════════════════
+// カメラ撮影プレビュー操作
+// ══════════════════════════════════════
+function retakePhoto() {
+  capturedBase64 = null;
+  document.getElementById('capturePreview').classList.remove('show');
+  document.getElementById('cameraArea').className = 'camera-area full';
+}
+
+async function analyzePreview() {
+  if (!capturedBase64 || isProcessing) return;
+  isProcessing = true;
+  const btn = document.getElementById('captureBtn');
+  btn.disabled = true;
+
+  showProcessing('Claude が解析中...', '撮影画像を分析しています');
+
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString();
+
+  try {
+    const prompt = document.getElementById('promptInput').value || null;
+
+    const res = await fetch(`${BACKEND_URL}/analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image_base64: capturedBase64, prompt }),
+    });
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+    const data = await res.json();
+
+    // プレビューを閉じる
+    document.getElementById('capturePreview').classList.remove('show');
+
+    addResult({
+      time: timeStr, elapsed: data.elapsed_ms, ocr: data.ocr_text,
+      analysis: data.analysis, nextSteps: data.next_steps,
+      capturedImage: 'data:image/jpeg;base64,' + capturedBase64,
+      followups: []
+    });
+    document.getElementById('statusText').textContent = `完了 ${data.elapsed_ms}ms`;
+    capturedBase64 = null;
 
   } catch (err) {
     document.getElementById('statusText').textContent = 'エラー';
@@ -521,6 +624,11 @@ function renderResults() {
     const latest = idx === 0;
     let h = `<div class="result-card" style="opacity:${latest?'1':'0.6'}">`;
     h += `<div class="result-time">${r.time} (${r.elapsed}ms) ${latest?'<span class="badge">最新</span>':''}</div>`;
+
+    // 撮影画像サムネイル（カメラ撮影モードの場合）
+    if (r.capturedImage) {
+      h += `<div style="margin-bottom:8px;text-align:center"><img src="${r.capturedImage}" style="max-width:100%;max-height:120px;border-radius:6px;border:1px solid #333"></div>`;
+    }
 
     if (r.analysis) h += `<div class="section"><div class="section-title analysis">🧠 分析</div><div class="body-text">${esc(r.analysis)}</div></div>`;
     if (r.nextSteps) h += `<div class="next-steps-box"><div class="section-title nextsteps">✨ 次にやること</div><div class="body-text">${esc(r.nextSteps)}</div></div>`;
