@@ -1,44 +1,57 @@
 #!/usr/bin/env python3
 """
-ai-ojt バックエンドサーバー（HTML配信機能付き）
+ai-ojt バックエンドサーバー（マルチAI対応）
 ================================================
-スマホからこのサーバーのURLにアクセスするだけで
-フロントエンド（カメラUI）もAPIも全て使える。
+Claude / ChatGPT / Gemini を切り替えて使える。
 
 起動:
     export ANTHROPIC_API_KEY="sk-ant-xxx"
+    export OPENAI_API_KEY="sk-xxx"          # ChatGPT用（任意）
+    export GEMINI_API_KEY="AIzaSyXxx"       # Gemini用（任意）
     uvicorn server:app --host 0.0.0.0 --port 8000 --reload
-
-スマホからアクセス:
-    https://<PCのIP or ドメイン>:8000/
 """
 
 import base64
+import os
 import time
 from pathlib import Path
 from typing import Optional
 
-import anthropic
 import cv2
 import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 
 # ──────────────────────────────────────────────
 # 設定
 # ──────────────────────────────────────────────
-DEFAULT_MODEL = "claude-sonnet-4-6"
-FAST_MODEL = "claude-haiku-4-5-20251001"  # 高速モード用
 MAX_IMAGE_SIZE = (1568, 1568)
 BLUR_THRESHOLD = 50.0
 SIMILARITY_THRESHOLD = 0.95
 
-# HTMLファイルのパス（server.py と同階層の ../index.html を参照）
 HTML_PATH = Path(__file__).parent.parent / "index.html"
 
+# AIプロバイダー設定
+AI_PROVIDERS = {
+    "claude": {
+        "normal": "claude-sonnet-4-6",
+        "fast": "claude-haiku-4-5-20251001",
+        "label": "Claude (Anthropic)",
+    },
+    "chatgpt": {
+        "normal": "gpt-4o",
+        "fast": "gpt-4o-mini",
+        "label": "ChatGPT (OpenAI)",
+    },
+    "gemini": {
+        "normal": "gemini-2.5-flash",
+        "fast": "gemini-2.0-flash-lite",
+        "label": "Gemini (Google)",
+    },
+}
 
 # ──────────────────────────────────────────────
 # FastAPI セットアップ
@@ -53,7 +66,117 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-client = anthropic.Anthropic()
+# ──────────────────────────────────────────────
+# AIクライアント初期化（遅延ロード）
+# ──────────────────────────────────────────────
+_clients = {}
+
+
+def get_claude_client():
+    if "claude" not in _clients:
+        import anthropic
+        _clients["claude"] = anthropic.Anthropic()
+    return _clients["claude"]
+
+
+def get_openai_client():
+    if "openai" not in _clients:
+        from openai import OpenAI
+        _clients["openai"] = OpenAI()
+    return _clients["openai"]
+
+
+def get_gemini_client():
+    if "gemini" not in _clients:
+        from google import genai
+        _clients["gemini"] = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", ""))
+    return _clients["gemini"]
+
+
+# ──────────────────────────────────────────────
+# 統一AIインターフェース
+# ──────────────────────────────────────────────
+def ai_vision(provider: str, model: str, image_b64: str, text_prompt: str, max_tokens: int = 1024) -> str:
+    """画像+テキストプロンプトを送り、テキスト応答を返す統一関数"""
+    if provider == "claude":
+        client = get_claude_client()
+        response = client.messages.create(
+            model=model,
+            max_tokens=max_tokens,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": image_b64}},
+                    {"type": "text", "text": text_prompt},
+                ],
+            }],
+        )
+        return response.content[0].text
+
+    elif provider == "chatgpt":
+        client = get_openai_client()
+        response = client.chat.completions.create(
+            model=model,
+            max_tokens=max_tokens,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_b64}", "detail": "high"}},
+                    {"type": "text", "text": text_prompt},
+                ],
+            }],
+        )
+        return response.choices[0].message.content
+
+    elif provider == "gemini":
+        client = get_gemini_client()
+        image_bytes = base64.b64decode(image_b64)
+        response = client.models.generate_content(
+            model=model,
+            contents=[
+                {"inline_data": {"mime_type": "image/png", "data": base64.b64encode(image_bytes).decode()}},
+                text_prompt,
+            ],
+        )
+        return response.text
+
+    raise ValueError(f"未対応プロバイダー: {provider}")
+
+
+def ai_text(provider: str, model: str, system_prompt: str, user_message: str, max_tokens: int = 800) -> str:
+    """テキストのみのプロンプトを送る統一関数"""
+    if provider == "claude":
+        client = get_claude_client()
+        response = client.messages.create(
+            model=model,
+            max_tokens=max_tokens,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_message}],
+        )
+        return response.content[0].text
+
+    elif provider == "chatgpt":
+        client = get_openai_client()
+        response = client.chat.completions.create(
+            model=model,
+            max_tokens=max_tokens,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+        )
+        return response.choices[0].message.content
+
+    elif provider == "gemini":
+        client = get_gemini_client()
+        full_prompt = f"{system_prompt}\n\n---\n\n{user_message}"
+        response = client.models.generate_content(
+            model=model,
+            contents=[full_prompt],
+        )
+        return response.text
+
+    raise ValueError(f"未対応プロバイダー: {provider}")
 
 
 # ──────────────────────────────────────────────
@@ -106,36 +229,28 @@ def decode_base64_image(data: str) -> np.ndarray:
 
 
 # ──────────────────────────────────────────────
-# Claude API 呼び出し
+# AI解析関数（プロバイダー対応版）
 # ──────────────────────────────────────────────
-def ocr_single_frame(frame_b64: str, model: str = DEFAULT_MODEL) -> str:
-    response = client.messages.create(
-        model=model,
+def ocr_single_frame(frame_b64: str, provider: str = "claude", model: str = None) -> str:
+    if model is None:
+        model = AI_PROVIDERS[provider]["normal"]
+    return ai_vision(
+        provider, model, frame_b64,
+        "画像のテキストをすべて正確に読み取れ。コードはコードブロックで囲め。テキストのみ出力。説明不要。",
         max_tokens=1024,
-        messages=[{
-            "role": "user",
-            "content": [
-                {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": frame_b64}},
-                {"type": "text", "text": (
-                    "画像のテキストをすべて正確に読み取れ。"
-                    "コードはコードブロックで囲め。テキストのみ出力。説明不要。"
-                )},
-            ],
-        }],
     )
-    return response.content[0].text
 
 
-def suggest_next_steps(ocr_text: str, analysis: Optional[str], model: str = DEFAULT_MODEL) -> str:
+def suggest_next_steps(ocr_text: str, analysis: Optional[str], provider: str = "claude", model: str = None) -> str:
+    if model is None:
+        model = AI_PROVIDERS[provider]["normal"]
     context = f"画面内容:\n{ocr_text}\n"
     if analysis:
         context += f"\n分析:\n{analysis}\n"
-
-    response = client.messages.create(
-        model=model,
-        max_tokens=800,
-        system=(
-            "あなたはOJTメンターだ。現場で手を止めずに読める短い回答を返せ。"
+    return ai_text(
+        provider, model,
+        system_prompt=(
+            "あなたはOJTメンターだ。現場で手を止めずに読める短い回答を返せ。\n"
             "以下のフォーマットで回答しろ:\n\n"
             "【これは何か】1行で画面の状況を要約\n\n"
             "【次にやること】最大3個、各1行で\n"
@@ -144,22 +259,21 @@ def suggest_next_steps(ocr_text: str, analysis: Optional[str], model: str = DEFA
             "【参考リンク】関連する公式ドキュメントやStack OverflowのURLがあれば記載。なければ省略\n\n"
             "長文禁止。箇条書き中心。合計200文字以内を目指せ。"
         ),
-        messages=[{"role": "user", "content": context}],
+        user_message=context,
     )
-    return response.content[0].text
 
 
-def analyze_with_context(ocr_text: str, prompt: str, history: list[dict], model: str = DEFAULT_MODEL) -> str:
+def analyze_with_context(ocr_text: str, prompt: str, history: list[dict], provider: str = "claude", model: str = None) -> str:
+    if model is None:
+        model = AI_PROVIDERS[provider]["normal"]
     context = ""
     if history:
         context = "\n直近の画面:\n"
         for h in history[-3:]:
             context += f"{h['text'][:200]}\n---\n"
-
-    response = client.messages.create(
-        model=model,
-        max_tokens=1000,
-        system=(
+    return ai_text(
+        provider, model,
+        system_prompt=(
             "あなたはOJTメンターだ。画面に映っている内容を特定し、質問に対して簡潔に答えろ。\n"
             "以下のフォーマットで回答しろ:\n\n"
             "【これは何か】1行で画面の状況を要約（何のツール/画面/作業をしているか）\n\n"
@@ -171,88 +285,76 @@ def analyze_with_context(ocr_text: str, prompt: str, history: list[dict], model:
             "- 「〜と思います」等の冗長表現禁止\n"
             "- 合計300文字以内を目指せ"
         ),
-        messages=[{
-            "role": "user",
-            "content": f"画面:\n{ocr_text}\n{context}\n質問: {prompt}",
-        }],
-    )
-    return response.content[0].text
-
-
-def analyze_image_fast(frame_b64: str, prompt: Optional[str] = None, model: str = FAST_MODEL) -> dict:
-    """画像から直接1回のAPI呼び出しでOCR+分析+次のアクションを返す（高速版）"""
-    user_prompt = prompt or ""
-    instruction = (
-        "この画像を見て以下を回答しろ。\n\n"
-        "【読み取りテキスト】画像内のテキストを正確に読み取れ（コードはコードブロックで）\n\n"
-        "【これは何か】1行で画面の状況を要約\n\n"
-    )
-    if user_prompt:
-        instruction += f"【回答】以下の質問に3〜5行以内で答えろ。結論ファースト。\n質問: {user_prompt}\n\n"
-    instruction += (
-        "【次にやること】最大3個、各1行で\n\n"
-        "【注意・危険】あれば1〜2行。なければ省略\n\n"
-        "【参考リンク】関連URLがあれば記載。なければ省略\n\n"
-        "ルール: 冗長表現禁止。合計300文字以内。"
+        user_message=f"画面:\n{ocr_text}\n{context}\n質問: {prompt}",
     )
 
-    response = client.messages.create(
-        model=model,
-        max_tokens=1200,
-        messages=[{
-            "role": "user",
-            "content": [
-                {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": frame_b64}},
-                {"type": "text", "text": instruction},
-            ],
-        }],
+
+def analyze_image_fast(frame_b64: str, prompt: Optional[str] = None, provider: str = "claude", model: str = None) -> dict:
+    """高速版: 2往復（① OCR ② 分析+アクション提案）"""
+    if model is None:
+        model = AI_PROVIDERS[provider]["fast"]
+
+    ocr_text = ocr_single_frame(frame_b64, provider=provider, model=model)
+
+    context = f"画面内容:\n{ocr_text}\n"
+    if prompt:
+        context += f"\n質問: {prompt}\n"
+
+    combined_analysis = ai_text(
+        provider, model,
+        system_prompt=(
+            "あなたはOJTメンターだ。画面に映っている内容を特定し、簡潔に答えろ。\n"
+            "以下のフォーマットで回答しろ:\n\n"
+            "【これは何か】1行で画面の状況を要約\n\n"
+            + ("【回答】質問に3〜5行以内で回答。結論ファースト\n\n" if prompt else "")
+            + "【次にやること】最大3個、各1行で\n\n"
+            "【注意・危険】あれば1〜2行。なければ省略\n\n"
+            "【参考リンク】関連URLがあれば記載。なければ省略\n\n"
+            "ルール: 冗長表現禁止。合計300文字以内。"
+        ),
+        user_message=context,
     )
-    full_text = response.content[0].text
-
-    # テキスト部分を抽出
-    ocr_text = ""
-    if "【読み取りテキスト】" in full_text:
-        parts = full_text.split("【読み取りテキスト】", 1)
-        remainder = parts[1] if len(parts) > 1 else ""
-        # 次のセクションまでを抽出
-        for marker in ["【これは何か】", "【回答】", "【次にやること】"]:
-            if marker in remainder:
-                ocr_text = remainder.split(marker, 1)[0].strip()
-                break
-        if not ocr_text:
-            ocr_text = remainder.strip()
-
-    # 【読み取りテキスト】以降の全体を next_steps として返す
-    analysis_text = full_text
-    if "【読み取りテキスト】" in full_text:
-        # 【これは何か】以降を返す
-        for marker in ["【これは何か】", "【回答】", "【次にやること】"]:
-            if marker in full_text:
-                analysis_text = full_text[full_text.index(marker):]
-                break
-
-    return {"ocr_text": ocr_text or full_text[:200], "combined_analysis": analysis_text}
+    return {"ocr_text": ocr_text, "combined_analysis": combined_analysis}
 
 
-def answer_followup(ocr_text: str, previous_analysis: Optional[str], question: str, model: str = DEFAULT_MODEL) -> str:
+def deep_analyze(ocr_text: str, analysis: Optional[str], next_steps: Optional[str], provider: str = "claude", model: str = None) -> str:
+    if model is None:
+        model = AI_PROVIDERS[provider]["normal"]
+    context = f"画面内容:\n{ocr_text[:500]}\n"
+    if analysis:
+        context += f"\n分析結果:\n{analysis[:300]}\n"
+    if next_steps:
+        context += f"\nアクション提案:\n{next_steps[:300]}\n"
+    return ai_text(
+        provider, model,
+        system_prompt=(
+            "OJTメンターとして、前の分析を踏まえて技術的な補足を行え。\n"
+            "以下のフォーマットで回答:\n\n"
+            "【技術的な補足】前の分析で触れていない重要なポイント（2〜3行）\n\n"
+            "【よくあるミス】この作業で初心者がやりがちなミス（1〜2個）\n\n"
+            "【ベストプラクティス】プロならこうする、という1行アドバイス\n\n"
+            "既に述べたことの繰り返し禁止。新しい情報のみ。合計200文字以内。"
+        ),
+        user_message=context,
+        max_tokens=600,
+    )
+
+
+def answer_followup(ocr_text: str, previous_analysis: Optional[str], question: str, provider: str = "claude", model: str = None) -> str:
+    if model is None:
+        model = AI_PROVIDERS[provider]["normal"]
     context = f"画面: {ocr_text[:500]}\n"
     if previous_analysis:
         context += f"前回の回答: {previous_analysis[:300]}\n"
-
-    response = client.messages.create(
-        model=model,
-        max_tokens=800,
-        system=(
+    return ai_text(
+        provider, model,
+        system_prompt=(
             "OJTメンターとして追加質問に簡潔に答えろ。"
             "3〜5行以内。結論ファースト。コード例は最小限。"
             "関連URLがあれば末尾に。"
         ),
-        messages=[{
-            "role": "user",
-            "content": f"{context}\n追加質問: {question}",
-        }],
+        user_message=f"{context}\n追加質問: {question}",
     )
-    return response.content[0].text
 
 
 # ──────────────────────────────────────────────
@@ -261,24 +363,29 @@ def answer_followup(ocr_text: str, previous_analysis: Optional[str], question: s
 class AnalyzeRequest(BaseModel):
     image_base64: str
     prompt: Optional[str] = None
+    provider: str = "claude"  # "claude" | "chatgpt" | "gemini"
 
 
 class AnalyzeResponse(BaseModel):
     ocr_text: str
     analysis: Optional[str] = None
     next_steps: Optional[str] = None
+    deep_analysis: Optional[str] = None
+    provider: str = "claude"
     elapsed_ms: int
 
 
 class AnalyzeFastRequest(BaseModel):
     image_base64: str
     prompt: Optional[str] = None
-    speed: str = "fast"  # "fast" = Haiku, "normal" = Sonnet
+    speed: str = "fast"
+    provider: str = "claude"
 
 
 class AnalyzeFastResponse(BaseModel):
     ocr_text: str
     combined_analysis: str
+    provider: str = "claude"
     elapsed_ms: int
 
 
@@ -286,10 +393,12 @@ class FollowupRequest(BaseModel):
     ocr_text: str
     previous_analysis: Optional[str] = None
     question: str
+    provider: str = "claude"
 
 
 class FollowupResponse(BaseModel):
     answer: str
+    provider: str = "claude"
     elapsed_ms: int
 
 
@@ -319,12 +428,11 @@ sessions: dict[str, SessionState] = {}
 # エンドポイント
 # ──────────────────────────────────────────────
 
-# ★ ルートにアクセスしたらフロントエンドHTMLを返す
 @app.get("/", response_class=HTMLResponse)
 def serve_frontend():
     if HTML_PATH.exists():
         return HTMLResponse(content=HTML_PATH.read_text(encoding="utf-8"))
-    return HTMLResponse(content="<h1>index.html が見つかりません</h1><p>backend/ と同階層に index.html を配置してください</p>", status_code=404)
+    return HTMLResponse(content="<h1>index.html が見つかりません</h1>", status_code=404)
 
 
 @app.get("/health")
@@ -332,9 +440,27 @@ def health():
     return {"status": "ok", "time": time.time()}
 
 
+@app.get("/providers")
+def list_providers():
+    """利用可能なAIプロバイダー一覧（APIキー設定済みかどうかも返す）"""
+    result = {}
+    for key, info in AI_PROVIDERS.items():
+        if key == "claude":
+            available = bool(os.environ.get("ANTHROPIC_API_KEY"))
+        elif key == "chatgpt":
+            available = bool(os.environ.get("OPENAI_API_KEY"))
+        elif key == "gemini":
+            available = bool(os.environ.get("GEMINI_API_KEY"))
+        else:
+            available = False
+        result[key] = {"label": info["label"], "available": available, "models": {"normal": info["normal"], "fast": info["fast"]}}
+    return JSONResponse(content=result)
+
+
 @app.post("/analyze", response_model=AnalyzeResponse)
 async def analyze(req: AnalyzeRequest):
     start = time.time()
+    provider = req.provider if req.provider in AI_PROVIDERS else "claude"
 
     try:
         frame = decode_base64_image(req.image_base64)
@@ -344,29 +470,38 @@ async def analyze(req: AnalyzeRequest):
     processed = preprocess_frame(frame)
     processed_b64 = frame_to_base64(processed)
 
-    ocr_text = ocr_single_frame(processed_b64)
+    # 1往復目: OCR
+    ocr_text = ocr_single_frame(processed_b64, provider=provider)
 
+    # 2往復目: 分析（promptがある場合）
     analysis = None
     if req.prompt:
-        analysis = analyze_with_context(ocr_text, req.prompt, history=[])
+        analysis = analyze_with_context(ocr_text, req.prompt, history=[], provider=provider)
 
+    # 3往復目: アクション提案
     try:
-        next_steps = suggest_next_steps(ocr_text, analysis)
+        next_steps = suggest_next_steps(ocr_text, analysis, provider=provider)
     except Exception as e:
         next_steps = f"次のアクション提案の生成に失敗: {e}"
 
+    # 4往復目: 深掘り分析
+    deep = None
+    try:
+        deep = deep_analyze(ocr_text, analysis, next_steps, provider=provider)
+    except Exception as e:
+        deep = f"深掘り分析の生成に失敗: {e}"
+
     return AnalyzeResponse(
-        ocr_text=ocr_text,
-        analysis=analysis,
-        next_steps=next_steps,
+        ocr_text=ocr_text, analysis=analysis, next_steps=next_steps,
+        deep_analysis=deep, provider=provider,
         elapsed_ms=int((time.time() - start) * 1000),
     )
 
 
 @app.post("/analyze-fast", response_model=AnalyzeFastResponse)
 async def analyze_fast(req: AnalyzeFastRequest):
-    """高速解析: 画像→1回のAPI呼び出しでOCR+分析+アクション提案を一括返却"""
     start = time.time()
+    provider = req.provider if req.provider in AI_PROVIDERS else "claude"
 
     try:
         frame = decode_base64_image(req.image_base64)
@@ -376,22 +511,23 @@ async def analyze_fast(req: AnalyzeFastRequest):
     processed = preprocess_frame(frame)
     processed_b64 = frame_to_base64(processed)
 
-    model = FAST_MODEL if req.speed == "fast" else DEFAULT_MODEL
+    fast_model = AI_PROVIDERS[provider]["fast"] if req.speed == "fast" else AI_PROVIDERS[provider]["normal"]
     try:
-        result = analyze_image_fast(processed_b64, req.prompt, model=model)
+        result = analyze_image_fast(processed_b64, req.prompt, provider=provider, model=fast_model)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"解析失敗: {e}")
 
     return AnalyzeFastResponse(
-        ocr_text=result["ocr_text"],
-        combined_analysis=result["combined_analysis"],
+        ocr_text=result["ocr_text"], combined_analysis=result["combined_analysis"],
+        provider=provider,
         elapsed_ms=int((time.time() - start) * 1000),
     )
 
 
 @app.post("/analyze-upload", response_model=AnalyzeResponse)
-async def analyze_upload(file: UploadFile = File(...), prompt: Optional[str] = Form(None)):
+async def analyze_upload(file: UploadFile = File(...), prompt: Optional[str] = Form(None), provider: Optional[str] = Form("claude")):
     start = time.time()
+    prov = provider if provider in AI_PROVIDERS else "claude"
     contents = await file.read()
     nparr = np.frombuffer(contents, np.uint8)
     frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -400,34 +536,32 @@ async def analyze_upload(file: UploadFile = File(...), prompt: Optional[str] = F
 
     processed = preprocess_frame(frame)
     processed_b64 = frame_to_base64(processed)
-    ocr_text = ocr_single_frame(processed_b64)
+    ocr_text = ocr_single_frame(processed_b64, provider=prov)
 
     analysis = None
     if prompt:
-        analysis = analyze_with_context(ocr_text, prompt, history=[])
+        analysis = analyze_with_context(ocr_text, prompt, history=[], provider=prov)
 
     try:
-        next_steps = suggest_next_steps(ocr_text, analysis)
+        next_steps = suggest_next_steps(ocr_text, analysis, provider=prov)
     except Exception as e:
         next_steps = f"次のアクション提案の生成に失敗: {e}"
 
     return AnalyzeResponse(
-        ocr_text=ocr_text,
-        analysis=analysis,
-        next_steps=next_steps,
-        elapsed_ms=int((time.time() - start) * 1000),
+        ocr_text=ocr_text, analysis=analysis, next_steps=next_steps,
+        provider=prov, elapsed_ms=int((time.time() - start) * 1000),
     )
 
 
 @app.post("/followup", response_model=FollowupResponse)
 async def followup(req: FollowupRequest):
     start = time.time()
+    provider = req.provider if req.provider in AI_PROVIDERS else "claude"
     try:
-        answer = answer_followup(req.ocr_text, req.previous_analysis, req.question)
+        answer = answer_followup(req.ocr_text, req.previous_analysis, req.question, provider=provider)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"回答失敗: {e}")
-
-    return FollowupResponse(answer=answer, elapsed_ms=int((time.time() - start) * 1000))
+    return FollowupResponse(answer=answer, provider=provider, elapsed_ms=int((time.time() - start) * 1000))
 
 
 @app.websocket("/ws/stream/{session_id}")
@@ -452,12 +586,13 @@ async def websocket_stream(websocket: WebSocket, session_id: str):
                 await websocket.send_json({"type": "skip", "reason": reason})
                 continue
 
+            provider = data.get("provider", "claude")
             start = time.time()
             processed = preprocess_frame(frame)
             processed_b64 = frame_to_base64(processed)
 
             try:
-                ocr_text = ocr_single_frame(processed_b64)
+                ocr_text = ocr_single_frame(processed_b64, provider=provider)
             except Exception as e:
                 await websocket.send_json({"type": "error", "message": f"OCR失敗: {e}"})
                 continue
@@ -466,7 +601,7 @@ async def websocket_stream(websocket: WebSocket, session_id: str):
             prompt = data.get("prompt")
             if prompt:
                 try:
-                    analysis = analyze_with_context(ocr_text, prompt, state.history)
+                    analysis = analyze_with_context(ocr_text, prompt, state.history, provider=provider)
                 except Exception as e:
                     analysis = f"分析失敗: {e}"
 
@@ -476,9 +611,8 @@ async def websocket_stream(websocket: WebSocket, session_id: str):
                 state.history.pop(0)
 
             await websocket.send_json({
-                "type": "result",
-                "ocr_text": ocr_text,
-                "analysis": analysis,
+                "type": "result", "ocr_text": ocr_text,
+                "analysis": analysis, "provider": provider,
                 "elapsed_ms": int((time.time() - start) * 1000),
             })
 
