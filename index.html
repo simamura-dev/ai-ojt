@@ -25,9 +25,9 @@
     position: relative; width: 100%; background: #111; overflow: hidden; flex-shrink: 0;
     transition: height 0.4s ease;
   }
-  .camera-area.full { height: 240px; }
-  .camera-area.compact { height: 140px; }
-  .camera-area.mini { height: 80px; }
+  .camera-area.full { height: 480px; }
+  .camera-area.compact { height: 280px; }
+  .camera-area.mini { height: 160px; }
   .camera-area.hidden { height: 0; }
   #cameraVideo { width: 100%; height: 100%; object-fit: cover; display: block; transition: object-fit 0.3s; }
 
@@ -207,6 +207,70 @@
   .spinner-sm { display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.8s linear infinite; }
   @keyframes spin { to{transform:rotate(360deg)} }
 
+  /* ── AI プロバイダー選択 ── */
+  .ai-selector {
+    display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+  }
+  .ai-chip {
+    padding: 5px 10px; border-radius: 14px; font-size: 11px; font-weight: 600;
+    border: 1.5px solid #3a3a3a; background: #2a2a2a; color: #888;
+    cursor: pointer; transition: all 0.2s; white-space: nowrap;
+  }
+  .ai-chip:hover { border-color: #666; color: #ccc; }
+  .ai-chip.active { color: #fff; }
+  .ai-chip.claude.active { background: #d97706; border-color: #d97706; }
+  .ai-chip.chatgpt.active { background: #10a37f; border-color: #10a37f; }
+  .ai-chip.gemini.active { background: #4285f4; border-color: #4285f4; }
+  .ai-chip.unavailable { opacity: 0.35; pointer-events: none; }
+  .ai-chip .ai-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+  .ai-dot.claude { background: #d97706; }
+  .ai-dot.chatgpt { background: #10a37f; }
+  .ai-dot.gemini { background: #4285f4; }
+
+  /* 結果カードのプロバイダーバッジ */
+  .badge.claude { background: #d97706; color: #fff; }
+  .badge.chatgpt { background: #10a37f; color: #fff; }
+  .badge.gemini { background: #4285f4; color: #fff; }
+
+  /* ── 動画録画UI ── */
+  .video-rec-bar {
+    display: none; flex-shrink: 0; background: #1a0a0a; padding: 10px 14px;
+    align-items: center; gap: 10px; border-bottom: 1px solid #300;
+  }
+  .video-rec-bar.show { display: flex; }
+  .rec-dot { width: 10px; height: 10px; background: #e74c3c; border-radius: 50%; animation: recBlink 1s infinite; }
+  @keyframes recBlink { 0%,100%{opacity:1}50%{opacity:0.3} }
+  .rec-timer { font-size: 16px; font-weight: 700; color: #e74c3c; font-family: monospace; }
+  .rec-label { font-size: 11px; color: #aaa; }
+  .rec-stop-btn {
+    margin-left: auto; background: #e74c3c; border: none; border-radius: 8px;
+    padding: 8px 16px; color: #fff; font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+  .rec-stop-btn:hover { background: #c0392b; }
+
+  /* 動画プレビュー＆質問エリア */
+  .video-preview-area {
+    display: none; flex-shrink: 0; background: #111; padding: 12px; text-align: center;
+  }
+  .video-preview-area.show { display: block; }
+  .video-preview-area .vp-info {
+    color: #4a90e2; font-size: 12px; font-weight: 600; margin-bottom: 8px;
+  }
+  .video-preview-area .vp-thumbs {
+    display: flex; gap: 4px; overflow-x: auto; justify-content: center; margin-bottom: 10px;
+  }
+  .video-preview-area .vp-thumbs img {
+    width: 60px; height: 45px; object-fit: cover; border-radius: 4px; border: 1px solid #333;
+  }
+  .video-preview-area .vp-actions {
+    display: flex; gap: 8px; justify-content: center;
+  }
+  .video-preview-area .vp-actions button {
+    padding: 9px 18px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .vp-retake { background: #3a3a3a; color: #fff; }
+  .vp-analyze { background: #4ade80; color: #000; }
+
   #ssFileInput { display: none; }
 
   /* ── プロンプト入力エリア ── */
@@ -290,6 +354,24 @@
 <!-- 撮影キュー（サムネイル横並び） -->
 <div class="capture-queue" id="captureQueue"></div>
 
+<!-- 動画録画バー -->
+<div class="video-rec-bar" id="videoRecBar">
+  <div class="rec-dot"></div>
+  <span class="rec-timer" id="recTimer">00:00</span>
+  <span class="rec-label">/ 60秒</span>
+  <button class="rec-stop-btn" onclick="stopVideoRecording()">⏹ 録画停止</button>
+</div>
+
+<!-- 動画プレビュー＆質問エリア -->
+<div class="video-preview-area" id="videoPreviewArea">
+  <div class="vp-info" id="vpInfo">🎬 録画完了</div>
+  <div class="vp-thumbs" id="vpThumbs"></div>
+  <div class="vp-actions">
+    <button class="vp-retake" onclick="retakeVideo()">🔄 撮り直す</button>
+    <button class="vp-analyze" onclick="analyzeVideoFrames()">🧠 解析する</button>
+  </div>
+</div>
+
 <!-- 処理中バー（コンパクト） -->
 <div class="processing-bar" id="processingBar">
   <div class="spinner-sm"></div>
@@ -317,6 +399,14 @@
     <button class="analyze-all-btn" id="analyzeAllBtn" onclick="analyzeQueue()">🧠 全て解析</button>
   </div>
   <div class="options-row">
+    <div class="ai-selector" id="aiSelector">
+      <span style="font-size:10px;color:#666">AI:</span>
+      <div class="ai-chip claude active" onclick="selectProvider('claude')"><span class="ai-dot claude"></span>Claude</div>
+      <div class="ai-chip chatgpt" onclick="selectProvider('chatgpt')"><span class="ai-dot chatgpt"></span>ChatGPT</div>
+      <div class="ai-chip gemini" onclick="selectProvider('gemini')"><span class="ai-dot gemini"></span>Gemini</div>
+    </div>
+  </div>
+  <div class="options-row" style="margin-top:4px">
     <div class="speed-toggle">
       <span>速度:</span>
       <div class="toggle-switch" id="speedToggle" onclick="toggleSpeed()"></div>
@@ -346,6 +436,16 @@ let videoDevices = [];
 let currentMode = 'still'; // 'still' | 'video' | 'screenshot'
 let screenshotBase64 = null;
 let speedMode = 'normal'; // 'fast' | 'normal'
+let aiProvider = 'claude'; // 'claude' | 'chatgpt' | 'gemini'
+
+// 動画録画
+let isRecording = false;
+let recordingTimer = null;
+let recordingStartTime = 0;
+let recordedFrames = []; // { base64, dataUrl, timestamp }
+const VIDEO_MAX_SECONDS = 60;
+const VIDEO_CAPTURE_INTERVAL = 3000; // 3秒ごとにフレームキャプチャ
+let videoCaptureTimer = null;
 
 // 撮影キュー
 let captureQueue = []; // { id, base64, dataUrl, status: 'pending'|'analyzing'|'done', result, selected }
@@ -362,6 +462,30 @@ const MOTION_THRESHOLD = 5;
 const video  = document.getElementById('cameraVideo');
 const canvas = document.getElementById('cameraCanvas');
 const ctx    = canvas.getContext('2d');
+
+// ══════════════════════════════════════
+// AIプロバイダー選択
+// ══════════════════════════════════════
+function selectProvider(provider) {
+  aiProvider = provider;
+  document.querySelectorAll('.ai-chip').forEach(c => c.classList.remove('active'));
+  document.querySelector(`.ai-chip.${provider}`).classList.add('active');
+}
+
+async function checkProviders() {
+  try {
+    const res = await fetch(`${BACKEND_URL}/providers`);
+    if (!res.ok) return;
+    const data = await res.json();
+    for (const [key, info] of Object.entries(data)) {
+      const chip = document.querySelector(`.ai-chip.${key}`);
+      if (chip && !info.available) {
+        chip.classList.add('unavailable');
+        chip.title = `${info.label}: APIキー未設定`;
+      }
+    }
+  } catch (e) { /* サーバー未起動時は無視 */ }
+}
 
 // ══════════════════════════════════════
 // プロンプト入力 & レコメンド
@@ -434,10 +558,13 @@ function setMode(mode) {
     document.getElementById('modeVideo').classList.add('active');
     cam.className = 'camera-area full';
     ss.classList.remove('show');
-    autoWrap.style.display = 'flex';
-    btn.textContent = '🎬 動画撮影＆解析 (30s)';
+    autoWrap.style.display = 'none';
+    btn.textContent = '🎬 録画スタート (max 60s)';
     analyzeBtn.classList.remove('show');
-    currentInterval = MOTION_INTERVAL;
+    // 録画中なら停止
+    if (isRecording) stopVideoRecording();
+    document.getElementById('videoPreviewArea').classList.remove('show');
+    document.getElementById('videoRecBar').classList.remove('show');
   }
 }
 
@@ -697,7 +824,11 @@ function onCaptureClick() {
   }
 
   if (currentMode === 'video') {
-    analyzeVideoCapture();
+    if (!isRecording) {
+      startVideoRecording();
+    } else {
+      stopVideoRecording();
+    }
     return;
   }
 }
@@ -731,8 +862,8 @@ async function analyzeQueue() {
 
     try {
       const body = speedMode === 'fast'
-        ? { image_base64: item.base64, prompt, speed: speedMode }
-        : { image_base64: item.base64, prompt };
+        ? { image_base64: item.base64, prompt, speed: speedMode, provider: aiProvider }
+        : { image_base64: item.base64, prompt, provider: aiProvider };
 
       const res = await fetch(`${BACKEND_URL}${endpoint}`, {
         method: 'POST',
@@ -752,15 +883,15 @@ async function analyzeQueue() {
           ocr: data.ocr_text, analysis: null,
           nextSteps: data.combined_analysis,
           capturedImage: item.dataUrl,
-          speedMode: 'fast', followups: []
+          speedMode: 'fast', provider: aiProvider, followups: []
         });
       } else {
         addResult({
           queueId: item.id, time: timeStr, elapsed: data.elapsed_ms,
           ocr: data.ocr_text, analysis: data.analysis,
-          nextSteps: data.next_steps,
+          nextSteps: data.next_steps, deepAnalysis: data.deep_analysis,
           capturedImage: item.dataUrl,
-          speedMode: 'normal', followups: []
+          speedMode: 'normal', provider: aiProvider, followups: []
         });
       }
 
@@ -770,7 +901,7 @@ async function analyzeQueue() {
       addResult({
         queueId: item.id, time: timeStr, elapsed: 0,
         ocr: '', analysis: `エラー: ${err.message}`, nextSteps: null,
-        capturedImage: item.dataUrl, speedMode, followups: []
+        capturedImage: item.dataUrl, speedMode, provider: aiProvider, followups: []
       });
     }
 
@@ -823,8 +954,8 @@ async function analyzeSelected() {
 
     try {
       const body = speedMode === 'fast'
-        ? { image_base64: item.base64, prompt, speed: speedMode }
-        : { image_base64: item.base64, prompt };
+        ? { image_base64: item.base64, prompt, speed: speedMode, provider: aiProvider }
+        : { image_base64: item.base64, prompt, provider: aiProvider };
 
       const res = await fetch(`${BACKEND_URL}${endpoint}`, {
         method: 'POST',
@@ -844,15 +975,15 @@ async function analyzeSelected() {
           ocr: data.ocr_text, analysis: null,
           nextSteps: data.combined_analysis,
           capturedImage: item.dataUrl,
-          speedMode: 'fast', followups: []
+          speedMode: 'fast', provider: aiProvider, followups: []
         });
       } else {
         addResult({
           queueId: item.id, time: timeStr, elapsed: data.elapsed_ms,
           ocr: data.ocr_text, analysis: data.analysis,
-          nextSteps: data.next_steps,
+          nextSteps: data.next_steps, deepAnalysis: data.deep_analysis,
           capturedImage: item.dataUrl,
-          speedMode: 'normal', followups: []
+          speedMode: 'normal', provider: aiProvider, followups: []
         });
       }
     } catch (err) {
@@ -861,7 +992,7 @@ async function analyzeSelected() {
       addResult({
         queueId: item.id, time: timeStr, elapsed: 0,
         ocr: '', analysis: `エラー: ${err.message}`, nextSteps: null,
-        capturedImage: item.dataUrl, speedMode, followups: []
+        capturedImage: item.dataUrl, speedMode, provider: aiProvider, followups: []
       });
     }
 
@@ -899,11 +1030,11 @@ async function analyzeScreenshot() {
     const res = await fetch(`${BACKEND_URL}/analyze`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image_base64: screenshotBase64, prompt }),
+      body: JSON.stringify({ image_base64: screenshotBase64, prompt, provider: aiProvider }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    addResult({ time: timeStr, elapsed: data.elapsed_ms, ocr: data.ocr_text, analysis: data.analysis, nextSteps: data.next_steps, speedMode: 'normal', followups: [] });
+    addResult({ time: timeStr, elapsed: data.elapsed_ms, ocr: data.ocr_text, analysis: data.analysis, nextSteps: data.next_steps, deepAnalysis: data.deep_analysis, speedMode: 'normal', provider: aiProvider, followups: [] });
   } catch (err) {
     alert(`解析失敗: ${err.message}`);
   } finally {
@@ -914,36 +1045,178 @@ async function analyzeScreenshot() {
 }
 
 // ══════════════════════════════════════
-// 動画解析（従来）
+// 動画録画（max 60秒）
 // ══════════════════════════════════════
-async function analyzeVideoCapture() {
-  if (!cameraStream || isProcessing) return;
+function startVideoRecording() {
+  if (!cameraStream) { alert('カメラが起動していません'); return; }
+  isRecording = true;
+  recordedFrames = [];
+  recordingStartTime = Date.now();
+
+  const btn = document.getElementById('captureBtn');
+  btn.textContent = '⏹ 録画停止';
+  btn.style.background = '#e74c3c';
+
+  // 録画バー表示
+  document.getElementById('videoRecBar').classList.add('show');
+  document.getElementById('videoPreviewArea').classList.remove('show');
+
+  // タイマー更新
+  updateRecTimer();
+  recordingTimer = setInterval(() => {
+    const elapsed = (Date.now() - recordingStartTime) / 1000;
+    if (elapsed >= VIDEO_MAX_SECONDS) {
+      stopVideoRecording();
+      return;
+    }
+    updateRecTimer();
+  }, 500);
+
+  // 定期的にフレームキャプチャ
+  captureVideoFrame(); // 最初の1枚
+  videoCaptureTimer = setInterval(captureVideoFrame, VIDEO_CAPTURE_INTERVAL);
+}
+
+function captureVideoFrame() {
+  if (!isRecording || !cameraStream) return;
+  const base64 = captureFrame();
+  const dataUrl = 'data:image/jpeg;base64,' + base64;
+  const elapsed = ((Date.now() - recordingStartTime) / 1000).toFixed(1);
+  recordedFrames.push({ base64, dataUrl, timestamp: elapsed });
+
+  // フラッシュ
+  video.style.opacity = '0.5';
+  setTimeout(() => { video.style.opacity = '1'; }, 80);
+}
+
+function updateRecTimer() {
+  const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
+  const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
+  const ss = String(elapsed % 60).padStart(2, '0');
+  document.getElementById('recTimer').textContent = `${mm}:${ss}`;
+}
+
+function stopVideoRecording() {
+  isRecording = false;
+  clearInterval(recordingTimer);
+  clearInterval(videoCaptureTimer);
+  recordingTimer = null;
+  videoCaptureTimer = null;
+
+  // 最後のフレームも追加
+  if (cameraStream) {
+    captureVideoFrame();
+  }
+
+  const btn = document.getElementById('captureBtn');
+  btn.textContent = '🎬 録画スタート (max 60s)';
+  btn.style.background = '';
+
+  // 録画バー非表示
+  document.getElementById('videoRecBar').classList.remove('show');
+
+  // プレビュー表示
+  showVideoPreview();
+}
+
+function showVideoPreview() {
+  const area = document.getElementById('videoPreviewArea');
+  const thumbs = document.getElementById('vpThumbs');
+  const info = document.getElementById('vpInfo');
+
+  const elapsed = ((Date.now() - recordingStartTime) / 1000).toFixed(0);
+  info.textContent = `🎬 録画完了: ${recordedFrames.length}フレーム / ${elapsed}秒`;
+
+  // サムネイル表示（最大10枚）
+  const step = Math.max(1, Math.floor(recordedFrames.length / 10));
+  const displayFrames = recordedFrames.filter((_, i) => i % step === 0).slice(0, 10);
+  thumbs.innerHTML = displayFrames.map(f =>
+    `<img src="${f.dataUrl}" title="${f.timestamp}s">`
+  ).join('');
+
+  area.classList.add('show');
+  document.getElementById('cameraArea').className = 'camera-area compact';
+}
+
+function retakeVideo() {
+  recordedFrames = [];
+  document.getElementById('videoPreviewArea').classList.remove('show');
+  document.getElementById('cameraArea').className = 'camera-area full';
+}
+
+async function analyzeVideoFrames() {
+  if (recordedFrames.length === 0 || isProcessing) return;
   isProcessing = true;
   document.getElementById('captureBtn').disabled = true;
-  document.getElementById('processingBar').classList.add('show');
-  document.getElementById('procText').textContent = '解析中...';
 
-  const base64 = captureFrame();
-  const timeStr = new Date().toLocaleTimeString();
+  const bar = document.getElementById('processingBar');
+  bar.classList.add('show');
+
   const prompt = document.getElementById('promptInput').value || null;
+  const endpoint = speedMode === 'fast' ? '/analyze-fast' : '/analyze';
 
-  try {
-    const res = await fetch(`${BACKEND_URL}/analyze`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image_base64: base64, prompt }),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    document.getElementById('cameraArea').className = 'camera-area mini';
-    addResult({ time: timeStr, elapsed: data.elapsed_ms, ocr: data.ocr_text, analysis: data.analysis, nextSteps: data.next_steps, speedMode: 'normal', followups: [] });
-  } catch (err) {
-    alert(`解析失敗: ${err.message}`);
-  } finally {
-    isProcessing = false;
-    document.getElementById('captureBtn').disabled = false;
-    document.getElementById('processingBar').classList.remove('show');
+  // 等間隔で最大5フレームを選んで解析
+  const maxFrames = 5;
+  const step = Math.max(1, Math.floor(recordedFrames.length / maxFrames));
+  const framesToAnalyze = recordedFrames.filter((_, i) => i % step === 0).slice(0, maxFrames);
+
+  let allOcr = [];
+  let lastResult = null;
+
+  for (let i = 0; i < framesToAnalyze.length; i++) {
+    const frame = framesToAnalyze[i];
+    document.getElementById('procText').textContent = `動画解析中... (${i + 1}/${framesToAnalyze.length})`;
+    document.getElementById('procCount').textContent = `${frame.timestamp}s`;
+
+    try {
+      const body = speedMode === 'fast'
+        ? { image_base64: frame.base64, prompt, speed: speedMode, provider: aiProvider }
+        : { image_base64: frame.base64, prompt, provider: aiProvider };
+
+      const res = await fetch(`${BACKEND_URL}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) continue;
+      const data = await res.json();
+      lastResult = data;
+      allOcr.push(`[${frame.timestamp}s] ${data.ocr_text || ''}`);
+    } catch (e) { /* skip frame */ }
   }
+
+  // 結果をまとめて表示
+  const timeStr = new Date().toLocaleTimeString();
+  if (lastResult) {
+    const combinedOcr = allOcr.join('\n---\n');
+    if (speedMode === 'fast') {
+      addResult({
+        time: timeStr, elapsed: lastResult.elapsed_ms,
+        ocr: combinedOcr, analysis: null,
+        nextSteps: lastResult.combined_analysis,
+        capturedImage: framesToAnalyze[framesToAnalyze.length - 1].dataUrl,
+        speedMode: 'fast', provider: aiProvider, followups: [],
+        videoFrameCount: recordedFrames.length,
+      });
+    } else {
+      addResult({
+        time: timeStr, elapsed: lastResult.elapsed_ms,
+        ocr: combinedOcr, analysis: lastResult.analysis,
+        nextSteps: lastResult.next_steps, deepAnalysis: lastResult.deep_analysis,
+        capturedImage: framesToAnalyze[framesToAnalyze.length - 1].dataUrl,
+        speedMode: 'normal', provider: aiProvider, followups: [],
+        videoFrameCount: recordedFrames.length,
+      });
+    }
+  }
+
+  // クリーンアップ
+  document.getElementById('videoPreviewArea').classList.remove('show');
+  bar.classList.remove('show');
+  isProcessing = false;
+  document.getElementById('captureBtn').disabled = false;
+  document.getElementById('statusText').textContent = `動画解析完了`;
 }
 
 // ══════════════════════════════════════
@@ -961,7 +1234,7 @@ async function askFollowup(idx) {
     const res = await fetch(`${BACKEND_URL}/followup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ocr_text: r.ocr, previous_analysis: r.analysis || r.nextSteps, question }),
+      body: JSON.stringify({ ocr_text: r.ocr, previous_analysis: r.analysis || r.nextSteps, question, provider: aiProvider }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
@@ -1008,6 +1281,10 @@ function renderResults() {
     let h = `<div class="result-card" style="opacity:${latest?'1':'0.6'}">`;
     h += `<div class="result-time">${r.time} (${r.elapsed}ms) ${latest?'<span class="badge">最新</span>':''}`;
     if (r.speedMode === 'fast') h += ' <span class="badge fast">⚡高速</span>';
+    if (r.provider) {
+      const pLabels = { claude: 'Claude', chatgpt: 'GPT', gemini: 'Gemini' };
+      h += ` <span class="badge ${r.provider}">${pLabels[r.provider] || r.provider}</span>`;
+    }
     h += `</div>`;
 
     // 撮影画像サムネイル
@@ -1017,6 +1294,7 @@ function renderResults() {
 
     if (r.analysis) h += `<div class="section"><div class="section-title analysis">🧠 分析</div><div class="body-text">${esc(r.analysis)}</div></div>`;
     if (r.nextSteps) h += `<div class="next-steps-box"><div class="section-title nextsteps">✨ 次にやること</div><div class="body-text">${esc(r.nextSteps)}</div></div>`;
+    if (r.deepAnalysis) h += `<div class="section" style="border-left:3px solid #a78bfa;padding-left:10px;border-bottom:none"><div class="section-title" style="color:#a78bfa">🔬 深掘り</div><div class="body-text">${esc(r.deepAnalysis)}</div></div>`;
 
     r.followups.forEach(f => { h += `<div class="followup-block"><div class="q-text">❓ ${esc(f.question)}</div><div class="a-text">${esc(f.answer)}</div></div>`; });
 
@@ -1071,6 +1349,7 @@ updateOrientation();
 // 初期化
 // ══════════════════════════════════════
 startCamera();
+checkProviders();
 </script>
 </body>
 </html>
