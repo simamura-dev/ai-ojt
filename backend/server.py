@@ -110,15 +110,14 @@ def decode_base64_image(data: str) -> np.ndarray:
 def ocr_single_frame(frame_b64: str, model: str = DEFAULT_MODEL) -> str:
     response = client.messages.create(
         model=model,
-        max_tokens=2048,
+        max_tokens=1024,
         messages=[{
             "role": "user",
             "content": [
                 {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": frame_b64}},
                 {"type": "text", "text": (
-                    "この画像に写っている画面のテキストをすべて正確に読み取ってください。"
-                    "UIの構造（見出し、ボタン、本文）を保ちつつ、コードがあればコードブロックで囲んでください。"
-                    "テキストのみを出力し、説明は不要です。"
+                    "画像のテキストをすべて正確に読み取れ。"
+                    "コードはコードブロックで囲め。テキストのみ出力。説明不要。"
                 )},
             ],
         }],
@@ -127,30 +126,24 @@ def ocr_single_frame(frame_b64: str, model: str = DEFAULT_MODEL) -> str:
 
 
 def suggest_next_steps(ocr_text: str, analysis: Optional[str], model: str = DEFAULT_MODEL) -> str:
-    context = f"## 画面に表示されている内容\n{ocr_text}\n"
+    context = f"画面内容:\n{ocr_text}\n"
     if analysis:
-        context += f"\n## これまでの分析\n{analysis}\n"
+        context += f"\n分析:\n{analysis}\n"
 
     response = client.messages.create(
         model=model,
-        max_tokens=2048,
+        max_tokens=800,
         system=(
-            "あなたはユーザーの開発作業を伴走するメンターです。"
-            "画面の状況と分析結果を踏まえて、ユーザーが今すぐ取るべき具体的なアクションを提案してください。"
+            "あなたはOJTメンターだ。現場で手を止めずに読める短い回答を返せ。"
+            "以下のフォーマットで回答しろ:\n\n"
+            "【これは何か】1行で画面の状況を要約\n\n"
+            "【次にやること】最大3個、各1行で\n"
+            "1. アクション → 具体的な手順\n\n"
+            "【注意・危険】あれば1〜2行。なければ省略\n\n"
+            "【参考リンク】関連する公式ドキュメントやStack OverflowのURLがあれば記載。なければ省略\n\n"
+            "長文禁止。箇条書き中心。合計200文字以内を目指せ。"
         ),
-        messages=[{
-            "role": "user",
-            "content": (
-                f"{context}\n"
-                "## 依頼\n"
-                "この状況を踏まえて、ユーザーが次にすべき具体的なアクションを3〜5個、"
-                "優先度の高い順にリストアップしてください。\n\n"
-                "各アクションは以下の形式で：\n"
-                "1. **[アクション名]** - なぜこれをするのか（1文）\n"
-                "   → 具体的な手順（1〜2文）\n\n"
-                "短く、実行可能で、今すぐ着手できる内容にしてください。"
-            ),
-        }],
+        messages=[{"role": "user", "content": context}],
     )
     return response.content[0].text
 
@@ -158,40 +151,46 @@ def suggest_next_steps(ocr_text: str, analysis: Optional[str], model: str = DEFA
 def analyze_with_context(ocr_text: str, prompt: str, history: list[dict], model: str = DEFAULT_MODEL) -> str:
     context = ""
     if history:
-        context = "\n## これまでの画面履歴（直近5件）\n"
-        for h in history[-5:]:
-            context += f"\n[{h['timestamp']:.1f}]\n{h['text'][:300]}\n"
+        context = "\n直近の画面:\n"
+        for h in history[-3:]:
+            context += f"{h['text'][:200]}\n---\n"
 
     response = client.messages.create(
         model=model,
-        max_tokens=4096,
+        max_tokens=1000,
         system=(
-            "あなたはユーザーのPC画面を見ながら開発をサポートするエキスパートです。"
-            "画面に表示されている内容を踏まえて、具体的で実用的なアドバイスをしてください。"
+            "あなたはOJTメンターだ。質問に対して簡潔に答えろ。\n"
+            "ルール:\n"
+            "- 3〜5行以内で回答\n"
+            "- 結論を最初に書く\n"
+            "- コード例は最小限（3行以内）\n"
+            "- 「〜と思います」等の冗長表現禁止\n"
+            "- 公式ドキュメントのURLがあれば末尾に記載"
         ),
         messages=[{
             "role": "user",
-            "content": f"## 現在の画面\n{ocr_text}\n{context}\n## 質問・指示\n{prompt}",
+            "content": f"画面:\n{ocr_text}\n{context}\n質問: {prompt}",
         }],
     )
     return response.content[0].text
 
 
 def answer_followup(ocr_text: str, previous_analysis: Optional[str], question: str, model: str = DEFAULT_MODEL) -> str:
-    context = f"## 画面の内容\n{ocr_text}\n"
+    context = f"画面: {ocr_text[:500]}\n"
     if previous_analysis:
-        context += f"\n## 直前の分析\n{previous_analysis}\n"
+        context += f"前回の回答: {previous_analysis[:300]}\n"
 
     response = client.messages.create(
         model=model,
-        max_tokens=4096,
+        max_tokens=800,
         system=(
-            "あなたはユーザーの作業を伴走するエキスパートです。"
-            "画面の内容とこれまでの流れを踏まえて、追加の質問に具体的に回答してください。"
+            "OJTメンターとして追加質問に簡潔に答えろ。"
+            "3〜5行以内。結論ファースト。コード例は最小限。"
+            "関連URLがあれば末尾に。"
         ),
         messages=[{
             "role": "user",
-            "content": f"{context}\n## 追加の質問\n{question}",
+            "content": f"{context}\n追加質問: {question}",
         }],
     )
     return response.content[0].text
