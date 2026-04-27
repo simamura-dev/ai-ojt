@@ -8,7 +8,7 @@
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background: #000; font-family: -apple-system, 'Hiragino Sans', sans-serif; color: #fff; min-height: 100dvh; display: flex; flex-direction: column; }
 
-  /* ── モード選択（初期画面） ── */
+  /* ── モード選択 ── */
   .mode-bar {
     display: flex; gap: 0; flex-shrink: 0; border-bottom: 1px solid #222;
   }
@@ -26,6 +26,7 @@
     transition: height 0.4s ease;
   }
   .camera-area.full { height: 240px; }
+  .camera-area.compact { height: 140px; }
   .camera-area.mini { height: 80px; }
   .camera-area.hidden { height: 0; }
   #cameraVideo { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -61,28 +62,37 @@
   .drop-zone .icon { font-size: 28px; margin-bottom: 8px; }
   #ssPreview { max-width: 100%; max-height: 160px; border-radius: 6px; margin-top: 10px; display: none; }
 
-  /* ── 撮影プレビュー（カメラ撮影モード用） ── */
-  .capture-preview {
-    display: none; flex-shrink: 0; background: #111; padding: 10px; text-align: center;
+  /* ── 撮影キュー（サムネイル横並び） ── */
+  .capture-queue {
+    display: none; flex-shrink: 0; background: #0a0a0a; padding: 8px 10px;
+    overflow-x: auto; white-space: nowrap; gap: 8px; border-bottom: 1px solid #222;
   }
-  .capture-preview.show { display: block; }
-  .capture-preview img {
-    max-width: 100%; max-height: 200px; border-radius: 8px; border: 2px solid #4a90e2;
+  .capture-queue.show { display: flex; }
+  .queue-item {
+    display: inline-flex; flex-direction: column; align-items: center; gap: 4px;
+    min-width: 80px; position: relative; flex-shrink: 0;
   }
-  .capture-preview .preview-label {
-    color: #4a90e2; font-size: 11px; font-weight: 600; margin-top: 6px;
+  .queue-item img {
+    width: 80px; height: 60px; object-fit: cover; border-radius: 6px;
+    border: 2px solid #333; cursor: pointer; transition: border-color 0.2s;
   }
-  .preview-actions {
-    display: flex; gap: 8px; justify-content: center; margin-top: 10px;
+  .queue-item img:hover { border-color: #4a90e2; }
+  .queue-item.analyzing img { border-color: #4a90e2; animation: glow 1.5s ease-in-out infinite; }
+  .queue-item.done img { border-color: #4ade80; }
+  .queue-item .queue-status {
+    font-size: 9px; color: #666; text-align: center; max-width: 80px;
+    overflow: hidden; text-overflow: ellipsis;
   }
-  .preview-actions button {
-    padding: 9px 20px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600;
-    cursor: pointer; transition: all 0.2s;
+  .queue-item .queue-status.pending { color: #888; }
+  .queue-item .queue-status.analyzing { color: #4a90e2; }
+  .queue-item .queue-status.done { color: #4ade80; }
+  .queue-item .queue-remove {
+    position: absolute; top: -4px; right: -4px; width: 18px; height: 18px;
+    background: #e74c3c; border: none; border-radius: 50%; color: #fff;
+    font-size: 10px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+    line-height: 1;
   }
-  .preview-actions .analyze-btn { background: #4ade80; color: #000; }
-  .preview-actions .analyze-btn:hover { background: #3bce70; }
-  .preview-actions .retake-btn { background: #3a3a3a; color: #fff; }
-  .preview-actions .retake-btn:hover { background: #4a4a4a; }
+  @keyframes glow { 0%,100%{box-shadow:0 0 4px rgba(74,144,226,0.3)}50%{box-shadow:0 0 12px rgba(74,144,226,0.6)} }
 
   /* ── コントロール ── */
   .controls { background: #1a1a1a; padding: 10px 14px; flex-shrink: 0; }
@@ -100,6 +110,20 @@
   .capture-btn:hover { background: #3a80d2; }
   .capture-btn:active { transform: scale(0.97); }
   .capture-btn:disabled { opacity: 0.5; pointer-events: none; }
+  .analyze-all-btn {
+    background: #4ade80; border: none; border-radius: 8px;
+    padding: 11px 16px; color: #000; font-size: 13px; font-weight: 600; cursor: pointer;
+    transition: all 0.2s; display: none;
+  }
+  .analyze-all-btn.show { display: block; }
+  .analyze-all-btn:hover { background: #3bce70; }
+  .analyze-all-btn:disabled { opacity: 0.5; pointer-events: none; }
+
+  .options-row { display: flex; gap: 12px; margin-top: 8px; align-items: center; flex-wrap: wrap; }
+  .speed-toggle { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #aaa; }
+  .speed-label { font-size: 10px; padding: 2px 6px; border-radius: 6px; font-weight: 600; }
+  .speed-label.fast { background: #4ade80; color: #000; }
+  .speed-label.normal { background: #4a90e2; color: #fff; }
   .auto-toggle { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #aaa; }
   .toggle-switch {
     width: 40px; height: 22px; background: #3a3a3a; border-radius: 11px;
@@ -112,16 +136,15 @@
   }
   .toggle-switch.on::after { left: 20px; }
 
-  /* ── 処理中インジケーター ── */
-  .processing-overlay {
-    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7);
-    z-index: 100; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+  /* ── 処理中インジケーター（コンパクト版） ── */
+  .processing-bar {
+    display: none; background: #1a2030; padding: 8px 14px; flex-shrink: 0;
+    border-bottom: 1px solid #222; align-items: center; gap: 10px;
   }
-  .processing-overlay.show { display: flex; }
-  .processing-spinner { width: 40px; height: 40px; border: 3px solid #333; border-top-color: #4a90e2; border-radius: 50%; animation: spin 0.8s linear infinite; }
-  @keyframes spin { to{transform:rotate(360deg)} }
-  .processing-text { color: #aaa; font-size: 13px; }
-  .processing-step { color: #4a90e2; font-size: 11px; margin-top: 4px; }
+  .processing-bar.show { display: flex; }
+  .processing-bar .spinner-sm { flex-shrink: 0; }
+  .processing-bar .proc-text { font-size: 12px; color: #4a90e2; }
+  .processing-bar .proc-count { font-size: 10px; color: #666; margin-left: auto; }
 
   /* ── 結果表示 ── */
   .results { flex: 1; overflow-y: auto; padding: 10px 14px; }
@@ -133,19 +156,14 @@
 
   .result-time { color: #555; font-size: 10px; margin-bottom: 6px; }
   .badge { font-size: 9px; padding: 2px 6px; border-radius: 8px; font-weight: 600; background: #4a90e2; color: #fff; margin-left: 4px; }
-
-  /* 画面特定セクション */
-  .what-is-box { background: #1a2030; border-left: 3px solid #60a5fa; border-radius: 8px; padding: 10px; margin-bottom: 8px; }
-  .what-is-title { color: #60a5fa; font-size: 12px; font-weight: 700; margin-bottom: 4px; }
+  .badge.fast { background: #4ade80; color: #000; }
 
   .section { margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid #2a2a2a; }
   .section-title { font-size: 11px; font-weight: 700; margin-bottom: 4px; }
   .section-title.analysis { color: #4a90e2; }
   .section-title.nextsteps { color: #4ade80; }
-  .section-title.warning { color: #f59e0b; }
 
   .next-steps-box { background: #1c2a1c; border-left: 3px solid #4ade80; border-radius: 8px; padding: 10px; margin-bottom: 8px; }
-  .warning-box { background: #2a2010; border-left: 3px solid #f59e0b; border-radius: 8px; padding: 10px; margin-bottom: 8px; }
 
   .body-text { font-size: 13px; line-height: 1.6; color: #e5e5e5; white-space: pre-wrap; }
 
@@ -169,18 +187,18 @@
   .empty-text { color: #555; text-align: center; padding: 30px 20px; font-size: 13px; line-height: 1.7; }
 
   .spinner-sm { display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to{transform:rotate(360deg)} }
 
-  /* ── 非表示ファイル入力 ── */
   #ssFileInput { display: none; }
 </style>
 </head>
 <body>
 
-<!-- モード選択バー（常時表示） -->
+<!-- モード選択バー -->
 <div class="mode-bar">
-  <button class="mode-btn" id="modeSS" onclick="setMode('screenshot')">🖼️ スクリーンショット</button>
-  <button class="mode-btn active" id="modeStill" onclick="setMode('still')">📷 カメラ撮影</button>
-  <button class="mode-btn" id="modeVideo" onclick="setMode('video')">🎬 動画撮影</button>
+  <button class="mode-btn" id="modeSS" onclick="setMode('screenshot')">🖼️ スクショ</button>
+  <button class="mode-btn active" id="modeStill" onclick="setMode('still')">📷 連続撮影</button>
+  <button class="mode-btn" id="modeVideo" onclick="setMode('video')">🎬 動画</button>
 </div>
 
 <!-- カメラプレビュー -->
@@ -206,21 +224,29 @@
   <input type="file" id="ssFileInput" accept="image/*">
 </div>
 
-<!-- 撮影プレビュー（カメラ撮影モード用） -->
-<div class="capture-preview" id="capturePreview">
-  <img id="capturePreviewImg" src="">
-  <div class="preview-label">📷 撮影画像</div>
-  <div class="preview-actions">
-    <button class="retake-btn" onclick="retakePhoto()">🔄 撮り直す</button>
-    <button class="analyze-btn" onclick="analyzePreview()">🧠 この画像を解析</button>
-  </div>
+<!-- 撮影キュー（サムネイル横並び） -->
+<div class="capture-queue" id="captureQueue"></div>
+
+<!-- 処理中バー（コンパクト） -->
+<div class="processing-bar" id="processingBar">
+  <div class="spinner-sm"></div>
+  <span class="proc-text" id="procText">解析中...</span>
+  <span class="proc-count" id="procCount"></span>
 </div>
 
 <!-- コントロール -->
 <div class="controls">
   <textarea class="prompt-input" id="promptInput" rows="1" placeholder="質問（省略可）"></textarea>
   <div class="button-row">
-    <button class="capture-btn" id="captureBtn" onclick="captureAndAnalyze()">📸 解析</button>
+    <button class="capture-btn" id="captureBtn" onclick="onCaptureClick()">📷 撮影</button>
+    <button class="analyze-all-btn" id="analyzeAllBtn" onclick="analyzeQueue()">🧠 まとめて解析</button>
+  </div>
+  <div class="options-row">
+    <div class="speed-toggle">
+      <span>速度:</span>
+      <div class="toggle-switch" id="speedToggle" onclick="toggleSpeed()"></div>
+      <span class="speed-label normal" id="speedLabel">通常</span>
+    </div>
     <div class="auto-toggle" id="autoToggleWrap">
       <span>自動</span>
       <div class="toggle-switch" id="autoToggle" onclick="toggleAuto()"></div>
@@ -228,19 +254,10 @@
   </div>
 </div>
 
-<!-- 処理中オーバーレイ -->
-<div class="processing-overlay" id="processingOverlay">
-  <div class="processing-spinner"></div>
-  <div class="processing-text" id="processingText">画像を送信中...</div>
-  <div class="processing-step" id="processingStep"></div>
-</div>
-
 <!-- 結果 -->
 <div class="results" id="results">
-  <div class="empty-text">カメラまたはスクリーンショットで<br>画面を読み込んで解析します</div>
+  <div class="empty-text">📷 撮影ボタンで連続撮影<br>🧠 まとめて解析ボタンで一括解析<br><br>⚡ 高速モードで2〜4秒</div>
 </div>
-
-<input type="file" id="ssFileInput" accept="image/*">
 
 <script>
 const BACKEND_URL = window.location.origin;
@@ -253,7 +270,11 @@ let currentDeviceIdx = -1;
 let videoDevices = [];
 let currentMode = 'still'; // 'still' | 'video' | 'screenshot'
 let screenshotBase64 = null;
-let capturedBase64 = null; // カメラ撮影モードで撮影済み画像を保持
+let speedMode = 'normal'; // 'fast' | 'normal'
+
+// 撮影キュー
+let captureQueue = []; // { id, base64, dataUrl, status: 'pending'|'analyzing'|'done', result }
+let queueIdCounter = 0;
 
 const STILL_INTERVAL = 3200;
 const MOTION_INTERVAL = 30000;
@@ -277,6 +298,10 @@ function setMode(mode) {
   const ss  = document.getElementById('ssArea');
   const autoWrap = document.getElementById('autoToggleWrap');
   const btn = document.getElementById('captureBtn');
+  const analyzeBtn = document.getElementById('analyzeAllBtn');
+
+  // プレビューキューをクリア
+  document.getElementById('captureQueue').classList.remove('show');
 
   if (mode === 'screenshot') {
     document.getElementById('modeSS').classList.add('active');
@@ -284,13 +309,14 @@ function setMode(mode) {
     ss.classList.add('show');
     autoWrap.style.display = 'none';
     btn.textContent = '🖼️ スクリーンショット解析';
+    analyzeBtn.classList.remove('show');
     if (autoTimer) { toggleAuto(); }
   } else if (mode === 'still') {
     document.getElementById('modeStill').classList.add('active');
     cam.className = 'camera-area full';
     ss.classList.remove('show');
     autoWrap.style.display = 'flex';
-    btn.textContent = '📷 撮影する';
+    btn.textContent = '📷 撮影';
     currentInterval = STILL_INTERVAL;
   } else if (mode === 'video') {
     document.getElementById('modeVideo').classList.add('active');
@@ -298,7 +324,26 @@ function setMode(mode) {
     ss.classList.remove('show');
     autoWrap.style.display = 'flex';
     btn.textContent = '🎬 動画撮影＆解析 (30s)';
+    analyzeBtn.classList.remove('show');
     currentInterval = MOTION_INTERVAL;
+  }
+}
+
+// ══════════════════════════════════════
+// 速度切替
+// ══════════════════════════════════════
+function toggleSpeed() {
+  const t = document.getElementById('speedToggle');
+  const label = document.getElementById('speedLabel');
+  t.classList.toggle('on');
+  if (t.classList.contains('on')) {
+    speedMode = 'fast';
+    label.textContent = '⚡高速';
+    label.className = 'speed-label fast';
+  } else {
+    speedMode = 'normal';
+    label.textContent = '通常';
+    label.className = 'speed-label normal';
   }
 }
 
@@ -413,153 +458,257 @@ function detectMotion() {
   prevFrameData = cur;
   const pct = (diff / (sw * sh)) * 100;
   const moving = pct > MOTION_THRESHOLD;
-
-  // 自動モードでインターバルだけ切り替え（モード選択は変えない）
   const newInterval = moving ? MOTION_INTERVAL : STILL_INTERVAL;
   if (newInterval !== currentInterval) {
     currentInterval = newInterval;
     if (autoTimer) {
       clearInterval(autoTimer);
-      autoTimer = setInterval(() => { if (!isProcessing) captureAndAnalyze(); }, currentInterval);
+      autoTimer = setInterval(() => { if (!isProcessing) onCaptureClick(); }, currentInterval);
     }
   }
 }
 
 // ══════════════════════════════════════
-// 処理中オーバーレイ
+// 撮影キュー管理
 // ══════════════════════════════════════
-function showProcessing(text, step) {
-  document.getElementById('processingText').textContent = text;
-  document.getElementById('processingStep').textContent = step || '';
-  document.getElementById('processingOverlay').classList.add('show');
+function addToQueue(base64) {
+  const id = ++queueIdCounter;
+  const dataUrl = 'data:image/jpeg;base64,' + base64;
+  captureQueue.push({ id, base64, dataUrl, status: 'pending', result: null });
+  renderQueue();
+  return id;
 }
-function hideProcessing() {
-  document.getElementById('processingOverlay').classList.remove('show');
+
+function removeFromQueue(id) {
+  captureQueue = captureQueue.filter(q => q.id !== id);
+  renderQueue();
 }
 
-// ══════════════════════════════════════
-// 撮影 & 解析
-// ══════════════════════════════════════
-async function captureAndAnalyze() {
-  if (isProcessing) return;
+function renderQueue() {
+  const el = document.getElementById('captureQueue');
+  const analyzeBtn = document.getElementById('analyzeAllBtn');
+  const pendingCount = captureQueue.filter(q => q.status === 'pending').length;
 
-  const now = new Date();
-  const timeStr = now.toLocaleTimeString();
-  document.getElementById('timeStamp').textContent = timeStr;
-
-  // ── カメラ撮影モード → まず撮影してプレビュー表示 ──
-  if (currentMode === 'still') {
-    if (!cameraStream) { alert('カメラが起動していません'); return; }
-    capturedBase64 = captureFrame();
-
-    // プレビュー画像を表示
-    const previewImg = document.getElementById('capturePreviewImg');
-    previewImg.src = 'data:image/jpeg;base64,' + capturedBase64;
-    document.getElementById('capturePreview').classList.add('show');
-
-    // カメラを縮小してプレビューを見せる
-    document.getElementById('cameraArea').className = 'camera-area mini';
-    return; // ← ここで止める。解析は analyzePreview() で行う
+  if (captureQueue.length === 0) {
+    el.classList.remove('show');
+    analyzeBtn.classList.remove('show');
+    return;
   }
 
-  // ── スクリーンショット / 動画モード → 従来通り即解析 ──
-  isProcessing = true;
-  const btn = document.getElementById('captureBtn');
-  btn.disabled = true;
+  el.classList.add('show');
+  if (pendingCount > 0 && currentMode === 'still') {
+    analyzeBtn.classList.add('show');
+    analyzeBtn.textContent = `🧠 解析 (${pendingCount}枚)`;
+  } else if (!isProcessing) {
+    analyzeBtn.classList.remove('show');
+  }
 
-  showProcessing('画像を送信中...', 'Claude に解析をリクエストしています');
+  el.innerHTML = captureQueue.map(q => {
+    const statusClass = q.status;
+    const statusText = q.status === 'pending' ? '待機中' : q.status === 'analyzing' ? '解析中...' : `✓ ${q.result?.elapsed || ''}ms`;
+    return `<div class="queue-item ${statusClass}">
+      <button class="queue-remove" onclick="removeFromQueue(${q.id})">×</button>
+      <img src="${q.dataUrl}" onclick="scrollToResult(${q.id})">
+      <span class="queue-status ${statusClass}">${statusText}</span>
+    </div>`;
+  }).join('');
+}
+
+function scrollToResult(queueId) {
+  const item = captureQueue.find(q => q.id === queueId);
+  if (item && item.result) {
+    const idx = resultList.findIndex(r => r.queueId === queueId);
+    if (idx >= 0) {
+      const cards = document.querySelectorAll('.result-card');
+      if (cards[idx]) cards[idx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }
+}
+
+// ══════════════════════════════════════
+// メイン撮影ボタン
+// ══════════════════════════════════════
+function onCaptureClick() {
+  if (currentMode === 'still') {
+    // 連続撮影モード → キューに追加するだけ（カメラは止めない）
+    if (!cameraStream) { alert('カメラが起動していません'); return; }
+    const base64 = captureFrame();
+    addToQueue(base64);
+
+    // カメラを少し縮小して撮影キューを見やすくする
+    if (captureQueue.length === 1) {
+      document.getElementById('cameraArea').className = 'camera-area compact';
+    }
+
+    // 撮影フィードバック（短いフラッシュ）
+    video.style.opacity = '0.3';
+    setTimeout(() => { video.style.opacity = '1'; }, 100);
+
+    document.getElementById('statusText').textContent = `${captureQueue.length}枚 撮影済み`;
+    return;
+  }
+
+  if (currentMode === 'screenshot') {
+    analyzeScreenshot();
+    return;
+  }
+
+  if (currentMode === 'video') {
+    analyzeVideoCapture();
+    return;
+  }
+}
+
+// ══════════════════════════════════════
+// キュー一括解析
+// ══════════════════════════════════════
+async function analyzeQueue() {
+  const pending = captureQueue.filter(q => q.status === 'pending');
+  if (pending.length === 0 || isProcessing) return;
+
+  isProcessing = true;
+  document.getElementById('captureBtn').disabled = true;
+  document.getElementById('analyzeAllBtn').disabled = true;
+
+  const bar = document.getElementById('processingBar');
+  bar.classList.add('show');
+
+  const prompt = document.getElementById('promptInput').value || null;
+  const endpoint = speedMode === 'fast' ? '/analyze-fast' : '/analyze';
+  let completed = 0;
+
+  for (const item of pending) {
+    item.status = 'analyzing';
+    renderQueue();
+
+    document.getElementById('procText').textContent = `解析中... (${completed + 1}/${pending.length})`;
+    document.getElementById('procCount').textContent = speedMode === 'fast' ? '⚡高速' : '通常';
+
+    const timeStr = new Date().toLocaleTimeString();
+
+    try {
+      const body = speedMode === 'fast'
+        ? { image_base64: item.base64, prompt, speed: speedMode }
+        : { image_base64: item.base64, prompt };
+
+      const res = await fetch(`${BACKEND_URL}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      item.status = 'done';
+      item.result = { elapsed: data.elapsed_ms };
+
+      if (speedMode === 'fast') {
+        addResult({
+          queueId: item.id, time: timeStr, elapsed: data.elapsed_ms,
+          ocr: data.ocr_text, analysis: null,
+          nextSteps: data.combined_analysis,
+          capturedImage: item.dataUrl,
+          speedMode: 'fast', followups: []
+        });
+      } else {
+        addResult({
+          queueId: item.id, time: timeStr, elapsed: data.elapsed_ms,
+          ocr: data.ocr_text, analysis: data.analysis,
+          nextSteps: data.next_steps,
+          capturedImage: item.dataUrl,
+          speedMode: 'normal', followups: []
+        });
+      }
+
+    } catch (err) {
+      item.status = 'done';
+      item.result = { elapsed: 0 };
+      addResult({
+        queueId: item.id, time: timeStr, elapsed: 0,
+        ocr: '', analysis: `エラー: ${err.message}`, nextSteps: null,
+        capturedImage: item.dataUrl, speedMode, followups: []
+      });
+    }
+
+    completed++;
+    renderQueue();
+  }
+
+  bar.classList.remove('show');
+  isProcessing = false;
+  document.getElementById('captureBtn').disabled = false;
+  document.getElementById('analyzeAllBtn').disabled = false;
+  document.getElementById('statusText').textContent = `完了 ${completed}枚`;
+
+  // 解析済みアイテムを3秒後にキューから自動削除
+  setTimeout(() => {
+    captureQueue = captureQueue.filter(q => q.status !== 'done');
+    renderQueue();
+  }, 3000);
+}
+
+// ══════════════════════════════════════
+// スクリーンショット解析（従来）
+// ══════════════════════════════════════
+async function analyzeScreenshot() {
+  if (!screenshotBase64 || isProcessing) { alert('画像を選択してください'); return; }
+  isProcessing = true;
+  document.getElementById('captureBtn').disabled = true;
+  document.getElementById('processingBar').classList.add('show');
+  document.getElementById('procText').textContent = '解析中...';
+
+  const timeStr = new Date().toLocaleTimeString();
+  const prompt = document.getElementById('promptInput').value || null;
 
   try {
-    let base64;
-    if (currentMode === 'screenshot') {
-      if (!screenshotBase64) { alert('画像を選択してください'); return; }
-      base64 = screenshotBase64;
-    } else {
-      if (!cameraStream) { alert('カメラが起動していません'); return; }
-      base64 = captureFrame();
-    }
+    const res = await fetch(`${BACKEND_URL}/analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image_base64: screenshotBase64, prompt }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    addResult({ time: timeStr, elapsed: data.elapsed_ms, ocr: data.ocr_text, analysis: data.analysis, nextSteps: data.next_steps, speedMode: 'normal', followups: [] });
+  } catch (err) {
+    alert(`解析失敗: ${err.message}`);
+  } finally {
+    isProcessing = false;
+    document.getElementById('captureBtn').disabled = false;
+    document.getElementById('processingBar').classList.remove('show');
+  }
+}
 
-    const prompt = document.getElementById('promptInput').value || null;
+// ══════════════════════════════════════
+// 動画解析（従来）
+// ══════════════════════════════════════
+async function analyzeVideoCapture() {
+  if (!cameraStream || isProcessing) return;
+  isProcessing = true;
+  document.getElementById('captureBtn').disabled = true;
+  document.getElementById('processingBar').classList.add('show');
+  document.getElementById('procText').textContent = '解析中...';
 
-    showProcessing('Claude が解析中...', 'テキスト抽出 → 分析 → アクション提案');
+  const base64 = captureFrame();
+  const timeStr = new Date().toLocaleTimeString();
+  const prompt = document.getElementById('promptInput').value || null;
 
+  try {
     const res = await fetch(`${BACKEND_URL}/analyze`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ image_base64: base64, prompt }),
     });
-
-    if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-
-    if (currentMode !== 'screenshot') {
-      document.getElementById('cameraArea').className = 'camera-area mini';
-    }
-
-    addResult({ time: timeStr, elapsed: data.elapsed_ms, ocr: data.ocr_text, analysis: data.analysis, nextSteps: data.next_steps, followups: [] });
-    document.getElementById('statusText').textContent = `完了 ${data.elapsed_ms}ms`;
-
+    document.getElementById('cameraArea').className = 'camera-area mini';
+    addResult({ time: timeStr, elapsed: data.elapsed_ms, ocr: data.ocr_text, analysis: data.analysis, nextSteps: data.next_steps, speedMode: 'normal', followups: [] });
   } catch (err) {
-    document.getElementById('statusText').textContent = 'エラー';
     alert(`解析失敗: ${err.message}`);
   } finally {
     isProcessing = false;
-    btn.disabled = false;
-    hideProcessing();
-  }
-}
-
-// ══════════════════════════════════════
-// カメラ撮影プレビュー操作
-// ══════════════════════════════════════
-function retakePhoto() {
-  capturedBase64 = null;
-  document.getElementById('capturePreview').classList.remove('show');
-  document.getElementById('cameraArea').className = 'camera-area full';
-}
-
-async function analyzePreview() {
-  if (!capturedBase64 || isProcessing) return;
-  isProcessing = true;
-  const btn = document.getElementById('captureBtn');
-  btn.disabled = true;
-
-  showProcessing('Claude が解析中...', '撮影画像を分析しています');
-
-  const now = new Date();
-  const timeStr = now.toLocaleTimeString();
-
-  try {
-    const prompt = document.getElementById('promptInput').value || null;
-
-    const res = await fetch(`${BACKEND_URL}/analyze`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image_base64: capturedBase64, prompt }),
-    });
-
-    if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
-    const data = await res.json();
-
-    // プレビューを閉じる
-    document.getElementById('capturePreview').classList.remove('show');
-
-    addResult({
-      time: timeStr, elapsed: data.elapsed_ms, ocr: data.ocr_text,
-      analysis: data.analysis, nextSteps: data.next_steps,
-      capturedImage: 'data:image/jpeg;base64,' + capturedBase64,
-      followups: []
-    });
-    document.getElementById('statusText').textContent = `完了 ${data.elapsed_ms}ms`;
-    capturedBase64 = null;
-
-  } catch (err) {
-    document.getElementById('statusText').textContent = 'エラー';
-    alert(`解析失敗: ${err.message}`);
-  } finally {
-    isProcessing = false;
-    btn.disabled = false;
-    hideProcessing();
+    document.getElementById('captureBtn').disabled = false;
+    document.getElementById('processingBar').classList.remove('show');
   }
 }
 
@@ -598,7 +747,7 @@ function toggleAuto() {
   if (t.classList.contains('on')) {
     prevFrameData = null;
     motionCheckTimer = setInterval(detectMotion, 500);
-    autoTimer = setInterval(() => { if (!isProcessing) captureAndAnalyze(); }, currentInterval);
+    autoTimer = setInterval(() => { if (!isProcessing) onCaptureClick(); }, currentInterval);
   } else {
     clearInterval(autoTimer); clearInterval(motionCheckTimer);
     autoTimer = null; motionCheckTimer = null;
@@ -610,24 +759,26 @@ function toggleAuto() {
 // ══════════════════════════════════════
 function addResult(r) {
   resultList.unshift(r);
-  if (resultList.length > 20) resultList.pop();
+  if (resultList.length > 30) resultList.pop();
   renderResults();
 }
 
 function renderResults() {
   const c = document.getElementById('results');
   if (resultList.length === 0) {
-    c.innerHTML = '<div class="empty-text">カメラまたはスクリーンショットで<br>画面を読み込んで解析します</div>';
+    c.innerHTML = '<div class="empty-text">📷 撮影ボタンで連続撮影<br>🧠 まとめて解析ボタンで一括解析<br><br>⚡ 高速モードで2〜4秒</div>';
     return;
   }
   c.innerHTML = resultList.map((r, idx) => {
     const latest = idx === 0;
     let h = `<div class="result-card" style="opacity:${latest?'1':'0.6'}">`;
-    h += `<div class="result-time">${r.time} (${r.elapsed}ms) ${latest?'<span class="badge">最新</span>':''}</div>`;
+    h += `<div class="result-time">${r.time} (${r.elapsed}ms) ${latest?'<span class="badge">最新</span>':''}`;
+    if (r.speedMode === 'fast') h += ' <span class="badge fast">⚡高速</span>';
+    h += `</div>`;
 
-    // 撮影画像サムネイル（カメラ撮影モードの場合）
+    // 撮影画像サムネイル
     if (r.capturedImage) {
-      h += `<div style="margin-bottom:8px;text-align:center"><img src="${r.capturedImage}" style="max-width:100%;max-height:120px;border-radius:6px;border:1px solid #333"></div>`;
+      h += `<div style="margin-bottom:8px;text-align:center"><img src="${r.capturedImage}" style="max-width:100%;max-height:100px;border-radius:6px;border:1px solid #333"></div>`;
     }
 
     if (r.analysis) h += `<div class="section"><div class="section-title analysis">🧠 分析</div><div class="body-text">${esc(r.analysis)}</div></div>`;
@@ -638,8 +789,7 @@ function renderResults() {
     h += `<div class="followup-row"><input class="followup-input" id="followup-${idx}" placeholder="追加質問..." onkeydown="if(event.key==='Enter'){event.preventDefault();askFollowup(${idx})}"><button class="ask-btn" onclick="askFollowup(${idx})">質問</button></div>`;
     h += `<div class="ocr-toggle" onclick="this.nextElementSibling.classList.toggle('show')">📝 テキスト ▼</div><div class="ocr-text">${esc(r.ocr)}</div>`;
 
-    // カメラ再表示ボタン（最新カードのみ）
-    if (latest) h += `<div class="expand-cam-btn" onclick="document.getElementById('cameraArea').className='camera-area full'">📷 カメラを再表示</div>`;
+    if (latest && currentMode !== 'screenshot') h += `<div class="expand-cam-btn" onclick="document.getElementById('cameraArea').className='camera-area full'">📷 カメラを大きく表示</div>`;
     h += `</div>`;
     return h;
   }).join('');
