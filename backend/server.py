@@ -31,6 +31,7 @@ from pydantic import BaseModel
 # 設定
 # ──────────────────────────────────────────────
 DEFAULT_MODEL = "claude-sonnet-4-6"
+FAST_MODEL = "claude-haiku-4-5-20251001"  # 高速モード用
 MAX_IMAGE_SIZE = (1568, 1568)
 BLUR_THRESHOLD = 50.0
 SIMILARITY_THRESHOLD = 0.95
@@ -178,6 +179,61 @@ def analyze_with_context(ocr_text: str, prompt: str, history: list[dict], model:
     return response.content[0].text
 
 
+def analyze_image_fast(frame_b64: str, prompt: Optional[str] = None, model: str = FAST_MODEL) -> dict:
+    """画像から直接1回のAPI呼び出しでOCR+分析+次のアクションを返す（高速版）"""
+    user_prompt = prompt or ""
+    instruction = (
+        "この画像を見て以下を回答しろ。\n\n"
+        "【読み取りテキスト】画像内のテキストを正確に読み取れ（コードはコードブロックで）\n\n"
+        "【これは何か】1行で画面の状況を要約\n\n"
+    )
+    if user_prompt:
+        instruction += f"【回答】以下の質問に3〜5行以内で答えろ。結論ファースト。\n質問: {user_prompt}\n\n"
+    instruction += (
+        "【次にやること】最大3個、各1行で\n\n"
+        "【注意・危険】あれば1〜2行。なければ省略\n\n"
+        "【参考リンク】関連URLがあれば記載。なければ省略\n\n"
+        "ルール: 冗長表現禁止。合計300文字以内。"
+    )
+
+    response = client.messages.create(
+        model=model,
+        max_tokens=1200,
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": frame_b64}},
+                {"type": "text", "text": instruction},
+            ],
+        }],
+    )
+    full_text = response.content[0].text
+
+    # テキスト部分を抽出
+    ocr_text = ""
+    if "【読み取りテキスト】" in full_text:
+        parts = full_text.split("【読み取りテキスト】", 1)
+        remainder = parts[1] if len(parts) > 1 else ""
+        # 次のセクションまでを抽出
+        for marker in ["【これは何か】", "【回答】", "【次にやること】"]:
+            if marker in remainder:
+                ocr_text = remainder.split(marker, 1)[0].strip()
+                break
+        if not ocr_text:
+            ocr_text = remainder.strip()
+
+    # 【読み取りテキスト】以降の全体を next_steps として返す
+    analysis_text = full_text
+    if "【読み取りテキスト】" in full_text:
+        # 【これは何か】以降を返す
+        for marker in ["【これは何か】", "【回答】", "【次にやること】"]:
+            if marker in full_text:
+                analysis_text = full_text[full_text.index(marker):]
+                break
+
+    return {"ocr_text": ocr_text or full_text[:200], "combined_analysis": analysis_text}
+
+
 def answer_followup(ocr_text: str, previous_analysis: Optional[str], question: str, model: str = DEFAULT_MODEL) -> str:
     context = f"画面: {ocr_text[:500]}\n"
     if previous_analysis:
@@ -211,6 +267,18 @@ class AnalyzeResponse(BaseModel):
     ocr_text: str
     analysis: Optional[str] = None
     next_steps: Optional[str] = None
+    elapsed_ms: int
+
+
+class AnalyzeFastRequest(BaseModel):
+    image_base64: str
+    prompt: Optional[str] = None
+    speed: str = "fast"  # "fast" = Haiku, "normal" = Sonnet
+
+
+class AnalyzeFastResponse(BaseModel):
+    ocr_text: str
+    combined_analysis: str
     elapsed_ms: int
 
 
@@ -291,6 +359,32 @@ async def analyze(req: AnalyzeRequest):
         ocr_text=ocr_text,
         analysis=analysis,
         next_steps=next_steps,
+        elapsed_ms=int((time.time() - start) * 1000),
+    )
+
+
+@app.post("/analyze-fast", response_model=AnalyzeFastResponse)
+async def analyze_fast(req: AnalyzeFastRequest):
+    """高速解析: 画像→1回のAPI呼び出しでOCR+分析+アクション提案を一括返却"""
+    start = time.time()
+
+    try:
+        frame = decode_base64_image(req.image_base64)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"画像デコード失敗: {e}")
+
+    processed = preprocess_frame(frame)
+    processed_b64 = frame_to_base64(processed)
+
+    model = FAST_MODEL if req.speed == "fast" else DEFAULT_MODEL
+    try:
+        result = analyze_image_fast(processed_b64, req.prompt, model=model)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"解析失敗: {e}")
+
+    return AnalyzeFastResponse(
+        ocr_text=result["ocr_text"],
+        combined_analysis=result["combined_analysis"],
         elapsed_ms=int((time.time() - start) * 1000),
     )
 
