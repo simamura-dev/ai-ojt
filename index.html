@@ -29,7 +29,25 @@
   .camera-area.compact { height: 140px; }
   .camera-area.mini { height: 80px; }
   .camera-area.hidden { height: 0; }
-  #cameraVideo { width: 100%; height: 100%; object-fit: cover; display: block; }
+  #cameraVideo { width: 100%; height: 100%; object-fit: cover; display: block; transition: object-fit 0.3s; }
+
+  /* ── 横向き時 ── */
+  .orientation-badge {
+    position: absolute; top: 6px; left: 6px; background: rgba(0,0,0,0.6);
+    padding: 2px 8px; border-radius: 10px; font-size: 9px; color: #aaa;
+    pointer-events: none; transition: opacity 0.3s;
+  }
+  @media (orientation: landscape) {
+    .camera-area.full { height: 60vh; }
+    .camera-area.compact { height: 35vh; }
+    .camera-area.mini { height: 15vh; }
+    #cameraVideo { object-fit: contain; }
+    .mode-bar { padding: 4px 0; }
+    .mode-btn { padding: 8px 6px; font-size: 12px; }
+    .controls { padding: 6px 14px; }
+    .recommend-chips { margin-top: 4px; }
+    .results { padding: 6px 14px; }
+  }
   #cameraCanvas { display: none; }
   .camera-overlay {
     position: absolute; bottom: 0; left: 0; right: 0; padding: 6px 12px;
@@ -190,6 +208,50 @@
   @keyframes spin { to{transform:rotate(360deg)} }
 
   #ssFileInput { display: none; }
+
+  /* ── プロンプト入力エリア ── */
+  .prompt-wrap {
+    position: relative;
+  }
+  .prompt-clear {
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    width: 22px; height: 22px; background: #555; border: none; border-radius: 50%;
+    color: #fff; font-size: 12px; cursor: pointer; display: none;
+    align-items: center; justify-content: center; line-height: 1;
+  }
+  .prompt-clear.show { display: flex; }
+  .prompt-clear:hover { background: #e74c3c; }
+
+  /* ── レコメンドチップ ── */
+  .recommend-chips {
+    display: flex; gap: 6px; margin-top: 6px; overflow-x: auto; padding-bottom: 2px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .recommend-chips::-webkit-scrollbar { height: 0; }
+  .chip {
+    flex-shrink: 0; padding: 6px 12px; background: #2a2a2a; border: 1px solid #3a3a3a;
+    border-radius: 16px; color: #ccc; font-size: 11px; cursor: pointer;
+    transition: all 0.2s; white-space: nowrap;
+  }
+  .chip:hover { background: #3a3a3a; border-color: #4a90e2; color: #fff; }
+  .chip.active { background: #4a90e2; border-color: #4a90e2; color: #fff; }
+
+  /* ── キュー選択状態 ── */
+  .queue-item.selected img { border-color: #ffd166 !important; box-shadow: 0 0 8px rgba(255,209,102,0.5); }
+  .queue-item .queue-select-badge {
+    position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
+    background: #ffd166; color: #000; font-size: 8px; font-weight: 700;
+    padding: 1px 5px; border-radius: 4px; display: none;
+  }
+  .queue-item.selected .queue-select-badge { display: block; }
+  .analyze-selected-btn {
+    background: #ffd166; border: none; border-radius: 8px;
+    padding: 11px 16px; color: #000; font-size: 13px; font-weight: 600; cursor: pointer;
+    transition: all 0.2s; display: none;
+  }
+  .analyze-selected-btn.show { display: block; }
+  .analyze-selected-btn:hover { background: #ffc233; }
+  .analyze-selected-btn:disabled { opacity: 0.5; pointer-events: none; }
 </style>
 </head>
 <body>
@@ -205,6 +267,7 @@
 <div class="camera-area full" id="cameraArea">
   <video id="cameraVideo" autoplay playsinline muted></video>
   <canvas id="cameraCanvas"></canvas>
+  <div class="orientation-badge" id="orientBadge">📱 縦向き</div>
   <div class="camera-overlay">
     <span><span class="status-dot" id="statusDot"></span><span id="statusText">起動中...</span></span>
     <span style="display:flex;align-items:center;gap:6px">
@@ -236,10 +299,22 @@
 
 <!-- コントロール -->
 <div class="controls">
-  <textarea class="prompt-input" id="promptInput" rows="1" placeholder="質問（省略可）"></textarea>
+  <div class="prompt-wrap">
+    <textarea class="prompt-input" id="promptInput" rows="1" placeholder="質問（省略可）" oninput="onPromptInput()"></textarea>
+    <button class="prompt-clear" id="promptClear" onclick="clearPrompt()">×</button>
+  </div>
+  <div class="recommend-chips" id="recommendChips">
+    <div class="chip" onclick="selectChip(this)">🔍 ソースコードを解析して</div>
+    <div class="chip" onclick="selectChip(this)">📐 設計を要約して</div>
+    <div class="chip" onclick="selectChip(this)">🤔 何をして欲しいか推論して</div>
+    <div class="chip" onclick="selectChip(this)">🐛 エラーの原因を教えて</div>
+    <div class="chip" onclick="selectChip(this)">💡 改善点を提案して</div>
+    <div class="chip" onclick="selectChip(this)">📝 手順を説明して</div>
+  </div>
   <div class="button-row">
     <button class="capture-btn" id="captureBtn" onclick="onCaptureClick()">📷 撮影</button>
-    <button class="analyze-all-btn" id="analyzeAllBtn" onclick="analyzeQueue()">🧠 まとめて解析</button>
+    <button class="analyze-selected-btn" id="analyzeSelectedBtn" onclick="analyzeSelected()">🧠 選択を解析</button>
+    <button class="analyze-all-btn" id="analyzeAllBtn" onclick="analyzeQueue()">🧠 全て解析</button>
   </div>
   <div class="options-row">
     <div class="speed-toggle">
@@ -273,8 +348,9 @@ let screenshotBase64 = null;
 let speedMode = 'normal'; // 'fast' | 'normal'
 
 // 撮影キュー
-let captureQueue = []; // { id, base64, dataUrl, status: 'pending'|'analyzing'|'done', result }
+let captureQueue = []; // { id, base64, dataUrl, status: 'pending'|'analyzing'|'done', result, selected }
 let queueIdCounter = 0;
+let selectedQueueIds = new Set(); // 選択中の画像ID
 
 const STILL_INTERVAL = 3200;
 const MOTION_INTERVAL = 30000;
@@ -286,6 +362,42 @@ const MOTION_THRESHOLD = 5;
 const video  = document.getElementById('cameraVideo');
 const canvas = document.getElementById('cameraCanvas');
 const ctx    = canvas.getContext('2d');
+
+// ══════════════════════════════════════
+// プロンプト入力 & レコメンド
+// ══════════════════════════════════════
+function onPromptInput() {
+  const val = document.getElementById('promptInput').value;
+  document.getElementById('promptClear').classList.toggle('show', val.length > 0);
+  // チップのアクティブ解除
+  if (val.length === 0) {
+    document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  }
+}
+
+function clearPrompt() {
+  document.getElementById('promptInput').value = '';
+  document.getElementById('promptClear').classList.remove('show');
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  document.getElementById('promptInput').focus();
+}
+
+function selectChip(el) {
+  const wasActive = el.classList.contains('active');
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+
+  if (wasActive) {
+    // 同じチップを押したら解除
+    document.getElementById('promptInput').value = '';
+    document.getElementById('promptClear').classList.remove('show');
+  } else {
+    el.classList.add('active');
+    // チップのテキストからアイコンを除去してセット
+    const text = el.textContent.replace(/^[^\s]+\s/, '');
+    document.getElementById('promptInput').value = text;
+    document.getElementById('promptClear').classList.add('show');
+  }
+}
 
 // ══════════════════════════════════════
 // モード切替
@@ -481,37 +593,68 @@ function addToQueue(base64) {
 
 function removeFromQueue(id) {
   captureQueue = captureQueue.filter(q => q.id !== id);
+  selectedQueueIds.delete(id);
   renderQueue();
 }
 
 function renderQueue() {
   const el = document.getElementById('captureQueue');
   const analyzeBtn = document.getElementById('analyzeAllBtn');
+  const analyzeSelBtn = document.getElementById('analyzeSelectedBtn');
   const pendingCount = captureQueue.filter(q => q.status === 'pending').length;
+  const selectedCount = selectedQueueIds.size;
 
   if (captureQueue.length === 0) {
     el.classList.remove('show');
     analyzeBtn.classList.remove('show');
+    analyzeSelBtn.classList.remove('show');
     return;
   }
 
   el.classList.add('show');
-  if (pendingCount > 0 && currentMode === 'still') {
+
+  // 選択があるときは「選択を解析」ボタン、なければ「全て解析」ボタン
+  if (selectedCount > 0 && currentMode === 'still') {
+    analyzeSelBtn.classList.add('show');
+    analyzeSelBtn.textContent = `🧠 選択を解析 (${selectedCount}枚)`;
+    analyzeBtn.classList.remove('show');
+  } else if (pendingCount > 0 && currentMode === 'still') {
     analyzeBtn.classList.add('show');
-    analyzeBtn.textContent = `🧠 解析 (${pendingCount}枚)`;
+    analyzeBtn.textContent = `🧠 全て解析 (${pendingCount}枚)`;
+    analyzeSelBtn.classList.remove('show');
   } else if (!isProcessing) {
     analyzeBtn.classList.remove('show');
+    analyzeSelBtn.classList.remove('show');
   }
 
   el.innerHTML = captureQueue.map(q => {
     const statusClass = q.status;
-    const statusText = q.status === 'pending' ? '待機中' : q.status === 'analyzing' ? '解析中...' : `✓ ${q.result?.elapsed || ''}ms`;
-    return `<div class="queue-item ${statusClass}">
-      <button class="queue-remove" onclick="removeFromQueue(${q.id})">×</button>
-      <img src="${q.dataUrl}" onclick="scrollToResult(${q.id})">
+    const isSelected = selectedQueueIds.has(q.id);
+    const statusText = q.status === 'pending'
+      ? (isSelected ? '✓ 選択中' : 'タップで選択')
+      : q.status === 'analyzing' ? '解析中...'
+      : `✓ ${q.result?.elapsed || ''}ms`;
+    const selectedClass = isSelected ? ' selected' : '';
+    // pendingの画像はタップで選択切替、doneの画像はタップで結果へスクロール
+    const clickAction = q.status === 'pending'
+      ? `toggleQueueSelect(${q.id})`
+      : `scrollToResult(${q.id})`;
+    return `<div class="queue-item ${statusClass}${selectedClass}">
+      <button class="queue-remove" onclick="event.stopPropagation();removeFromQueue(${q.id})">×</button>
+      <img src="${q.dataUrl}" onclick="${clickAction}">
+      <span class="queue-select-badge">選択中</span>
       <span class="queue-status ${statusClass}">${statusText}</span>
     </div>`;
   }).join('');
+}
+
+function toggleQueueSelect(id) {
+  if (selectedQueueIds.has(id)) {
+    selectedQueueIds.delete(id);
+  } else {
+    selectedQueueIds.add(id);
+  }
+  renderQueue();
 }
 
 function scrollToResult(queueId) {
@@ -642,6 +785,97 @@ async function analyzeQueue() {
   document.getElementById('statusText').textContent = `完了 ${completed}枚`;
 
   // 解析済みアイテムを3秒後にキューから自動削除
+  setTimeout(() => {
+    captureQueue = captureQueue.filter(q => q.status !== 'done');
+    renderQueue();
+  }, 3000);
+}
+
+// ══════════════════════════════════════
+// 選択画像のみ解析
+// ══════════════════════════════════════
+async function analyzeSelected() {
+  if (selectedQueueIds.size === 0 || isProcessing) return;
+
+  // 選択されたpendingアイテムのみ対象
+  const targets = captureQueue.filter(q => selectedQueueIds.has(q.id) && q.status === 'pending');
+  if (targets.length === 0) return;
+
+  isProcessing = true;
+  document.getElementById('captureBtn').disabled = true;
+  document.getElementById('analyzeSelectedBtn').disabled = true;
+
+  const bar = document.getElementById('processingBar');
+  bar.classList.add('show');
+
+  const prompt = document.getElementById('promptInput').value || null;
+  const endpoint = speedMode === 'fast' ? '/analyze-fast' : '/analyze';
+  let completed = 0;
+
+  for (const item of targets) {
+    item.status = 'analyzing';
+    renderQueue();
+
+    document.getElementById('procText').textContent = `解析中... (${completed + 1}/${targets.length})`;
+    document.getElementById('procCount').textContent = speedMode === 'fast' ? '⚡高速' : '通常';
+
+    const timeStr = new Date().toLocaleTimeString();
+
+    try {
+      const body = speedMode === 'fast'
+        ? { image_base64: item.base64, prompt, speed: speedMode }
+        : { image_base64: item.base64, prompt };
+
+      const res = await fetch(`${BACKEND_URL}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      item.status = 'done';
+      item.result = { elapsed: data.elapsed_ms };
+
+      if (speedMode === 'fast') {
+        addResult({
+          queueId: item.id, time: timeStr, elapsed: data.elapsed_ms,
+          ocr: data.ocr_text, analysis: null,
+          nextSteps: data.combined_analysis,
+          capturedImage: item.dataUrl,
+          speedMode: 'fast', followups: []
+        });
+      } else {
+        addResult({
+          queueId: item.id, time: timeStr, elapsed: data.elapsed_ms,
+          ocr: data.ocr_text, analysis: data.analysis,
+          nextSteps: data.next_steps,
+          capturedImage: item.dataUrl,
+          speedMode: 'normal', followups: []
+        });
+      }
+    } catch (err) {
+      item.status = 'done';
+      item.result = { elapsed: 0 };
+      addResult({
+        queueId: item.id, time: timeStr, elapsed: 0,
+        ocr: '', analysis: `エラー: ${err.message}`, nextSteps: null,
+        capturedImage: item.dataUrl, speedMode, followups: []
+      });
+    }
+
+    completed++;
+    selectedQueueIds.delete(item.id);
+    renderQueue();
+  }
+
+  bar.classList.remove('show');
+  isProcessing = false;
+  document.getElementById('captureBtn').disabled = false;
+  document.getElementById('analyzeSelectedBtn').disabled = false;
+  document.getElementById('statusText').textContent = `完了 ${completed}枚`;
+
   setTimeout(() => {
     captureQueue = captureQueue.filter(q => q.status !== 'done');
     renderQueue();
@@ -796,6 +1030,42 @@ function renderResults() {
 }
 
 function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>') : ''; }
+
+// ══════════════════════════════════════
+// 向き検知 & カメラ自動リサイズ
+// ══════════════════════════════════════
+let currentOrientation = 'portrait';
+
+function updateOrientation() {
+  const isLandscape = window.matchMedia('(orientation: landscape)').matches;
+  const prev = currentOrientation;
+  currentOrientation = isLandscape ? 'landscape' : 'portrait';
+
+  const badge = document.getElementById('orientBadge');
+  if (badge) {
+    badge.textContent = isLandscape ? '📱 横向き' : '📱 縦向き';
+  }
+
+  // 向きが変わった時、カメラが表示中ならフルに戻す
+  if (prev !== currentOrientation) {
+    const cam = document.getElementById('cameraArea');
+    if (cam && !cam.classList.contains('hidden')) {
+      cam.className = 'camera-area full';
+    }
+  }
+}
+
+// メディアクエリでリアルタイム検知（resizeよりも正確）
+const orientQuery = window.matchMedia('(orientation: landscape)');
+orientQuery.addEventListener('change', updateOrientation);
+
+// screen.orientation API対応（より信頼性が高い）
+if (screen.orientation) {
+  screen.orientation.addEventListener('change', updateOrientation);
+}
+
+// 初期状態をセット
+updateOrientation();
 
 // ══════════════════════════════════════
 // 初期化
