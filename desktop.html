@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ai-ojt デスクトップ</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0a; color: #e5e5e5;
+    font-family: -apple-system, 'Hiragino Sans', 'Segoe UI', sans-serif;
+    min-height: 100vh; display: flex; flex-direction: column;
+  }
+
+  /* ── ヘッダー ── */
+  .header {
+    background: #111; border-bottom: 1px solid #222;
+    padding: 12px 24px; display: flex; align-items: center; gap: 16px;
+    flex-shrink: 0;
+  }
+  .header h1 { font-size: 18px; font-weight: 700; color: #fff; white-space: nowrap; }
+  .header .session-info {
+    margin-left: auto; display: flex; align-items: center; gap: 12px;
+  }
+  .connection-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .connection-dot.connected { background: #4ade80; animation: pulse 2s infinite; }
+  .connection-dot.disconnected { background: #e74c3c; }
+  .connection-dot.waiting { background: #ffd166; animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.4} }
+  .session-id-badge {
+    font-family: monospace; font-size: 13px; background: #2a2a2a;
+    padding: 4px 10px; border-radius: 6px; color: #4a90e2;
+  }
+
+  /* ── AIプロバイダーバー ── */
+  .ai-bar {
+    display: none; background: #151515; border-bottom: 1px solid #222;
+    padding: 8px 24px; align-items: center; gap: 12px; flex-shrink: 0;
+  }
+  .ai-bar.show { display: flex; }
+  .ai-bar-label { font-size: 11px; color: #666; white-space: nowrap; }
+  .ai-bar-chips { display: flex; gap: 6px; }
+  .ai-chip {
+    padding: 6px 14px; border-radius: 16px; font-size: 12px; font-weight: 600;
+    border: 1.5px solid #3a3a3a; background: #2a2a2a; color: #888;
+    cursor: pointer; transition: all 0.2s; white-space: nowrap;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .ai-chip:hover { border-color: #666; color: #ccc; }
+  .ai-chip.active { color: #fff; }
+  .ai-chip.claude.active { background: #d97706; border-color: #d97706; }
+  .ai-chip.chatgpt.active { background: #10a37f; border-color: #10a37f; }
+  .ai-chip.gemini.active { background: #4285f4; border-color: #4285f4; }
+  .ai-chip.unavailable { opacity: 0.35; pointer-events: none; }
+  .ai-chip .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .ai-chip .dot.claude { background: #d97706; }
+  .ai-chip .dot.chatgpt { background: #10a37f; }
+  .ai-chip .dot.gemini { background: #4285f4; }
+  .ai-bar-status {
+    margin-left: auto; font-size: 10px; color: #555;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .ai-bar-status .active-dot {
+    width: 6px; height: 6px; border-radius: 50%; background: #4ade80;
+  }
+
+  /* ── 接続前画面 ── */
+  .connect-screen {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; flex: 1; gap: 20px; padding: 40px;
+  }
+  .connect-screen.hidden { display: none; }
+  .connect-screen h2 { font-size: 22px; color: #fff; }
+  .connect-screen p { color: #888; font-size: 14px; text-align: center; line-height: 1.7; }
+  .connect-input-row { display: flex; gap: 8px; align-items: center; }
+  .connect-input {
+    background: #2a2a2a; border: 1px solid #3a3a3a; border-radius: 8px;
+    padding: 10px 16px; color: #fff; font-size: 15px; font-family: monospace;
+    width: 200px; text-align: center; outline: none;
+  }
+  .connect-input:focus { border-color: #4a90e2; }
+  .connect-btn {
+    background: #4a90e2; border: none; border-radius: 8px;
+    padding: 10px 20px; color: #fff; font-size: 14px; font-weight: 600;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .connect-btn:hover { background: #3a80d2; }
+  .or-text { color: #555; font-size: 12px; margin: 8px 0; }
+  .connect-standalone {
+    margin-top: 16px; padding-top: 16px; border-top: 1px solid #222; text-align: center;
+  }
+  .connect-standalone .connect-btn { background: #333; }
+  .connect-standalone .connect-btn:hover { background: #444; }
+
+  /* ── メインレイアウト（2カラム） ── */
+  .main { display: none; flex: 1; overflow: hidden; }
+  .main.show { display: flex; }
+
+  .main-left {
+    flex: 1; overflow-y: auto; padding: 16px 20px; border-right: 1px solid #222;
+  }
+  .main-left::-webkit-scrollbar { width: 4px; }
+  .main-left::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+
+  .main-right {
+    width: 380px; display: flex; flex-direction: column;
+    background: #111; flex-shrink: 0;
+  }
+
+  /* ── 結果カード ── */
+  .result-grid { display: flex; flex-direction: column; gap: 14px; max-width: 700px; }
+
+  .d-card {
+    background: #151515; border: 1px solid #222; border-radius: 12px;
+    padding: 14px 18px; animation: fadeIn 0.4s ease-out;
+    transition: border-color 0.3s;
+  }
+  .d-card.new { border-color: #4a90e2; box-shadow: 0 0 12px rgba(74,144,226,0.15); }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)} }
+
+  .d-card-header {
+    display: flex; align-items: center; gap: 6px; margin-bottom: 8px;
+    padding-bottom: 6px; border-bottom: 1px solid #222; flex-wrap: wrap;
+  }
+  .d-card-time { font-size: 11px; color: #666; }
+  .d-badge {
+    font-size: 9px; padding: 2px 8px; border-radius: 10px;
+    font-weight: 600; color: #fff;
+  }
+  .d-badge.claude { background: #d97706; }
+  .d-badge.chatgpt { background: #10a37f; }
+  .d-badge.gemini { background: #4285f4; }
+  .d-badge.fast { background: #4ade80; color: #000; }
+  .d-badge.audio { background: #a78bfa; }
+  .d-badge.elapsed { background: #333; color: #aaa; }
+  .d-badge.desktop { background: #e74c3c; }
+
+  .d-card-actions { margin-left: auto; display: flex; gap: 4px; }
+  .d-mini-btn {
+    background: #2a2a2a; border: 1px solid #3a3a3a; border-radius: 6px;
+    padding: 3px 8px; color: #aaa; font-size: 10px; cursor: pointer;
+    transition: all 0.2s;
+  }
+  .d-mini-btn:hover { background: #3a3a3a; color: #fff; }
+
+  /* 結論ブロック */
+  .d-conclusion {
+    background: linear-gradient(135deg, #1a2a3a, #1a1a2e);
+    border-left: 3px solid #ffd166; border-radius: 8px;
+    padding: 10px 14px; margin-bottom: 10px;
+  }
+  .d-conclusion-title { font-size: 11px; font-weight: 700; color: #ffd166; margin-bottom: 4px; }
+  .d-conclusion-text { font-size: 14px; line-height: 1.7; color: #fff; white-space: pre-wrap; }
+
+  /* 詳細 */
+  .d-toggle {
+    display: flex; align-items: center; gap: 6px; color: #888; font-size: 11px;
+    cursor: pointer; padding: 4px 0; user-select: none; transition: color 0.2s;
+  }
+  .d-toggle:hover { color: #ccc; }
+  .d-toggle .arrow { transition: transform 0.3s; display: inline-block; }
+  .d-toggle .arrow.open { transform: rotate(90deg); }
+  .d-collapse { display: none; margin-top: 6px; }
+  .d-collapse.show { display: block; }
+  .d-section {
+    margin-bottom: 8px; padding: 8px 10px; background: #1a1a1a;
+    border-radius: 8px; font-size: 13px; line-height: 1.6;
+    color: #ccc; white-space: pre-wrap;
+  }
+  .d-section-title { font-size: 10px; font-weight: 700; margin-bottom: 3px; }
+  .d-section-title.analysis { color: #4a90e2; }
+  .d-section-title.nextsteps { color: #4ade80; }
+  .d-section-title.deep { color: #a78bfa; }
+  .d-section-title.transcript { color: #888; }
+
+  .d-thumb {
+    max-width: 100%; max-height: 100px; border-radius: 6px;
+    border: 1px solid #333; margin-bottom: 8px;
+  }
+
+  /* カード別追加質問 */
+  .d-followup-row {
+    display: flex; gap: 6px; margin-top: 8px; padding-top: 8px;
+    border-top: 1px solid #222;
+  }
+  .d-followup-input {
+    flex: 1; background: #2a2a2a; border: 1px solid #3a3a3a; border-radius: 6px;
+    padding: 6px 10px; color: #fff; font-size: 12px; outline: none; font-family: inherit;
+  }
+  .d-followup-input:focus { border-color: #4a90e2; }
+  .d-followup-btn {
+    background: #4a90e2; border: none; border-radius: 6px;
+    padding: 6px 12px; color: #fff; font-size: 11px; font-weight: 600; cursor: pointer;
+  }
+  .d-followup-btn:hover { background: #3a80d2; }
+  .d-followup-btn:disabled { opacity: 0.5; pointer-events: none; }
+
+  .d-followup-block {
+    margin: 6px 0; padding-left: 10px; border-left: 2px solid #444;
+  }
+  .d-fq { color: #ffd166; font-size: 11px; font-weight: 600; margin-bottom: 2px; }
+  .d-fa { color: #e5e5e5; font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
+  .d-fa-badge { font-size: 8px; padding: 1px 5px; border-radius: 6px; color: #fff; margin-left: 4px; vertical-align: middle; }
+
+  /* ── 右パネル: AIチャット ── */
+  .chat-header {
+    padding: 12px 16px; border-bottom: 1px solid #222;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .chat-header-title { font-size: 14px; font-weight: 700; color: #fff; }
+  .chat-header .active-provider {
+    font-size: 10px; padding: 2px 8px; border-radius: 8px; font-weight: 600;
+  }
+
+  .chat-messages {
+    flex: 1; overflow-y: auto; padding: 12px 16px;
+  }
+  .chat-messages::-webkit-scrollbar { width: 4px; }
+  .chat-messages::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+
+  .chat-msg {
+    margin-bottom: 12px; padding: 10px 12px; border-radius: 10px;
+    font-size: 13px; line-height: 1.6; white-space: pre-wrap;
+    max-width: 95%; animation: fadeIn 0.3s ease-out;
+  }
+  .chat-msg.user {
+    background: #1a2a3a; color: #e5e5e5; margin-left: auto;
+    border-bottom-right-radius: 3px;
+  }
+  .chat-msg.ai {
+    background: #1a1a1a; color: #e5e5e5;
+    border-bottom-left-radius: 3px;
+  }
+  .chat-msg .msg-provider {
+    font-size: 9px; font-weight: 600; margin-bottom: 4px; display: block;
+  }
+  .chat-msg .msg-provider.claude { color: #d97706; }
+  .chat-msg .msg-provider.chatgpt { color: #10a37f; }
+  .chat-msg .msg-provider.gemini { color: #4285f4; }
+  .chat-msg.loading .msg-body { color: #888; }
+
+  .chat-empty {
+    text-align: center; padding: 40px 20px; color: #555; font-size: 12px; line-height: 1.7;
+  }
+
+  .chat-input-area {
+    padding: 10px 14px; border-top: 1px solid #222; flex-shrink: 0;
+  }
+  .chat-context-label {
+    font-size: 9px; color: #555; margin-bottom: 4px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .chat-input-row { display: flex; gap: 6px; }
+  .chat-input {
+    flex: 1; background: #2a2a2a; border: 1px solid #3a3a3a; border-radius: 8px;
+    padding: 8px 12px; color: #fff; font-size: 13px; outline: none;
+    font-family: inherit; resize: none; min-height: 38px;
+  }
+  .chat-input:focus { border-color: #4a90e2; }
+  .chat-send-btn {
+    background: #4a90e2; border: none; border-radius: 8px;
+    padding: 8px 16px; color: #fff; font-size: 13px; font-weight: 600;
+    cursor: pointer; transition: all 0.2s; align-self: flex-end;
+  }
+  .chat-send-btn:hover { background: #3a80d2; }
+  .chat-send-btn:disabled { opacity: 0.5; pointer-events: none; }
+
+  /* ── 画像アップロードエリア ── */
+  .upload-bar {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+  }
+  .upload-btn {
+    background: #2a2a2a; border: 1px solid #3a3a3a; border-radius: 6px;
+    padding: 4px 10px; color: #aaa; font-size: 10px; cursor: pointer;
+  }
+  .upload-btn:hover { background: #3a3a3a; color: #fff; }
+  .upload-preview {
+    display: none; max-height: 60px; border-radius: 4px; border: 1px solid #333;
+  }
+  .upload-preview.show { display: block; }
+  #desktopFileInput { display: none; }
+
+  /* ── 空状態 ── */
+  .empty-state { text-align: center; padding: 40px 20px; color: #555; }
+  .empty-state .icon { font-size: 40px; margin-bottom: 12px; }
+  .empty-state p { font-size: 13px; line-height: 1.7; }
+
+  /* ── トースト ── */
+  .toast {
+    position: fixed; bottom: 20px; right: 20px;
+    background: #4a90e2; color: #fff; padding: 10px 20px;
+    border-radius: 8px; font-size: 13px; font-weight: 600;
+    transform: translateY(60px); opacity: 0;
+    transition: all 0.3s ease; z-index: 100;
+  }
+  .toast.show { transform: translateY(0); opacity: 1; }
+
+  /* ── レスポンシブ ── */
+  @media (max-width: 900px) {
+    .main.show { flex-direction: column; }
+    .main-right { width: 100%; max-height: 45vh; border-right: none; border-top: 1px solid #222; }
+    .main-left { border-right: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🖥️ ai-ojt デスクトップ</h1>
+  <div class="session-info">
+    <span class="connection-dot waiting" id="connDot"></span>
+    <span id="connStatus" style="font-size:11px;color:#888">未接続</span>
+    <span class="session-id-badge" id="sessionBadge" style="display:none"></span>
+  </div>
+</div>
+
+<!-- AIプロバイダーバー -->
+<div class="ai-bar" id="aiBar">
+  <span class="ai-bar-label">AI切替:</span>
+  <div class="ai-bar-chips" id="aiBarChips">
+    <div class="ai-chip claude active" onclick="selectDesktopAI('claude')"><span class="dot claude"></span>Claude</div>
+    <div class="ai-chip chatgpt" onclick="selectDesktopAI('chatgpt')"><span class="dot chatgpt"></span>ChatGPT</div>
+    <div class="ai-chip gemini" onclick="selectDesktopAI('gemini')"><span class="dot gemini"></span>Gemini</div>
+  </div>
+  <div class="ai-bar-status" id="aiBarStatus">
+    <span class="active-dot"></span>
+    <span id="aiActiveLabel">Claude 接続中</span>
+  </div>
+</div>
+
+<!-- 接続前画面 -->
+<div class="connect-screen" id="connectScreen">
+  <h2>📱 スマホと接続 / 🖥️ 単体で使う</h2>
+
+  <!-- 方法1: QRコード（推奨） -->
+  <div style="background:#151515;border:1px solid #222;border-radius:12px;padding:20px 24px;max-width:420px;width:100%;text-align:center">
+    <p style="color:#4ade80;font-size:13px;font-weight:600;margin-bottom:8px">✅ 推奨: QRコードで接続</p>
+    <p style="color:#888;font-size:12px;line-height:1.7;margin-bottom:4px">
+      スマホ側で<br>
+      ① オプション行の「🖥️同期」トグルをON<br>
+      ② 表示されたQRコードをこのPCでスキャン<br>
+      → 自動でこの画面が開いて接続されます
+    </p>
+  </div>
+
+  <!-- 方法2: 手動ID入力 -->
+  <div style="max-width:420px;width:100%;text-align:center">
+    <p style="color:#555;font-size:11px;margin-bottom:6px">または、スマホのQRコード下に表示される6桁のIDを入力:</p>
+    <div class="connect-input-row" style="justify-content:center">
+      <input class="connect-input" id="sessionInput" placeholder="例: a1b2c3" maxlength="6"
+        onkeydown="if(event.key==='Enter')connectSession()">
+      <button class="connect-btn" onclick="connectSession()">📱 接続</button>
+    </div>
+  </div>
+
+  <!-- 方法3: 単体モード -->
+  <div class="connect-standalone">
+    <button class="connect-btn" onclick="startStandalone()">🖥️ スマホなしで単体モードで開始</button>
+    <p style="font-size:11px;color:#555;margin-top:6px">デスクトップだけでAIに質問・画像解析する</p>
+  </div>
+</div>
+
+<!-- メイン画面 -->
+<div class="main" id="mainArea">
+  <!-- 左: 結果一覧 -->
+  <div class="main-left">
+    <div class="result-grid" id="resultGrid">
+      <div class="empty-state" id="emptyState">
+        <div class="icon">📡</div>
+        <p>スマホからの解析結果を待っています...<br>または右のチャットからAIに直接質問できます</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 右: AIチャット -->
+  <div class="main-right">
+    <div class="chat-header">
+      <span class="chat-header-title">💬 AIチャット</span>
+      <span class="active-provider d-badge" id="chatProviderBadge" style="background:#d97706">Claude</span>
+    </div>
+    <div class="chat-messages" id="chatMessages">
+      <div class="chat-empty">
+        AIに直接質問できます<br>
+        スマホから受信した結果の<br>
+        「💬 深掘り」を押すとコンテキスト付きで質問<br><br>
+        画像をアップロードして解析も可能です
+      </div>
+    </div>
+    <div class="chat-input-area">
+      <div class="chat-context-label" id="chatContextLabel"></div>
+      <div class="upload-bar">
+        <button class="upload-btn" onclick="document.getElementById('desktopFileInput').click()">📎 画像添付</button>
+        <img class="upload-preview" id="uploadPreview">
+        <button class="upload-btn" id="clearUploadBtn" style="display:none" onclick="clearUpload()">× 取消</button>
+        <input type="file" id="desktopFileInput" accept="image/*" onchange="onDesktopFileSelect(event)">
+      </div>
+      <div class="chat-input-row">
+        <textarea class="chat-input" id="chatInput" rows="1" placeholder="AIに質問..."
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}"></textarea>
+        <button class="chat-send-btn" id="chatSendBtn" onclick="sendChat()">送信</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const BACKEND_URL = window.location.origin;
+let eventSource = null;
+let results = [];
+let chatHistory = [];
+let desktopAI = 'claude';
+let chatContext = null; // { ocr, analysis } 追加質問用コンテキスト
+let uploadedImageB64 = null;
+let isStandalone = false;
+
+// ══════════════════════════════════════
+// AIプロバイダー切替
+// ══════════════════════════════════════
+function selectDesktopAI(provider) {
+  desktopAI = provider;
+  document.querySelectorAll('.ai-bar .ai-chip').forEach(c => c.classList.remove('active'));
+  document.querySelector(`.ai-bar .ai-chip.${provider}`).classList.add('active');
+
+  const labels = { claude: 'Claude', chatgpt: 'ChatGPT', gemini: 'Gemini' };
+  const colors = { claude: '#d97706', chatgpt: '#10a37f', gemini: '#4285f4' };
+  document.getElementById('aiActiveLabel').textContent = `${labels[provider]} 接続中`;
+  const badge = document.getElementById('chatProviderBadge');
+  badge.textContent = labels[provider];
+  badge.style.background = colors[provider];
+}
+
+async function checkDesktopProviders() {
+  try {
+    const res = await fetch(`${BACKEND_URL}/providers`);
+    if (!res.ok) return;
+    const data = await res.json();
+    for (const [key, info] of Object.entries(data)) {
+      const chip = document.querySelector(`.ai-bar .ai-chip.${key}`);
+      if (chip && !info.available) {
+        chip.classList.add('unavailable');
+        chip.title = `${info.label}: APIキー未設定`;
+      }
+    }
+  } catch (e) { /* サーバー未起動 */ }
+}
+
+// ══════════════════════════════════════
+// 接続
+// ══════════════════════════════════════
+const urlParams = new URLSearchParams(window.location.search);
+const paramSession = urlParams.get('session');
+if (paramSession) {
+  document.getElementById('sessionInput').value = paramSession;
+  setTimeout(connectSession, 100);
+}
+
+function startStandalone() {
+  isStandalone = true;
+  document.getElementById('connectScreen').classList.add('hidden');
+  document.getElementById('mainArea').classList.add('show');
+  document.getElementById('aiBar').classList.add('show');
+  document.getElementById('connDot').className = 'connection-dot connected';
+  document.getElementById('connStatus').textContent = '単体モード';
+  document.getElementById('emptyState').innerHTML =
+    '<div class="icon">🖥️</div><p>単体モード: 右のチャットからAIに直接質問<br>画像をアップロードして解析もできます</p>';
+  checkDesktopProviders();
+}
+
+function connectSession() {
+  const sid = document.getElementById('sessionInput').value.trim();
+  if (!sid) { alert('セッションIDを入力してください'); return; }
+
+  if (eventSource) { eventSource.close(); }
+
+  const dot = document.getElementById('connDot');
+  const status = document.getElementById('connStatus');
+  dot.className = 'connection-dot waiting';
+  status.textContent = '接続中...';
+
+  eventSource = new EventSource(`${BACKEND_URL}/sync/${sid}/stream`);
+
+  eventSource.onopen = () => {
+    dot.className = 'connection-dot connected';
+    status.textContent = '📱 同期中';
+    document.getElementById('sessionBadge').style.display = '';
+    document.getElementById('sessionBadge').textContent = `#${sid}`;
+    document.getElementById('connectScreen').classList.add('hidden');
+    document.getElementById('mainArea').classList.add('show');
+    document.getElementById('aiBar').classList.add('show');
+    history.replaceState(null, '', `?session=${sid}`);
+    checkDesktopProviders();
+  };
+
+  eventSource.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      addDesktopResult(data);
+      showToast('📱 新しい解析結果を受信');
+    } catch (e) {}
+  };
+
+  eventSource.onerror = () => {
+    dot.className = 'connection-dot disconnected';
+    status.textContent = '切断 - 再接続中...';
+  };
+}
+
+// ══════════════════════════════════════
+// 結果管理
+// ══════════════════════════════════════
+function addDesktopResult(data) {
+  if (data.id && results.some(r => r.id === data.id)) return;
+  if (!data.followups) data.followups = [];
+  results.unshift(data);
+  document.getElementById('emptyState').style.display = 'none';
+  renderResults();
+
+  if (Notification.permission === 'granted') {
+    new Notification('ai-ojt', { body: '新しい解析結果を受信しました' });
+  }
+}
+
+function renderResults() {
+  const grid = document.getElementById('resultGrid');
+  grid.innerHTML = '';
+
+  results.forEach((r, idx) => {
+    const card = document.createElement('div');
+    card.className = 'd-card' + (idx === 0 ? ' new' : '');
+    card.innerHTML = buildCardHtml(r, idx);
+    grid.appendChild(card);
+  });
+
+  setTimeout(() => {
+    document.querySelectorAll('.d-card.new').forEach(c => c.classList.remove('new'));
+  }, 3000);
+}
+
+function buildCardHtml(r, idx) {
+  let h = '<div class="d-card-header">';
+  const time = r.time || (r.timestamp ? new Date(r.timestamp * 1000).toLocaleTimeString() : '');
+  h += `<span class="d-card-time">${time}</span>`;
+
+  if (r.isAudio) h += ' <span class="d-badge audio">🎤 音声</span>';
+  if (r.isDesktop) h += ' <span class="d-badge desktop">🖥️ デスクトップ</span>';
+  if (r.provider) {
+    const labels = { claude: 'Claude', chatgpt: 'GPT', gemini: 'Gemini' };
+    h += ` <span class="d-badge ${r.provider}">${labels[r.provider] || r.provider}</span>`;
+  }
+  if (r.speedMode === 'fast') h += ' <span class="d-badge fast">⚡高速</span>';
+  if (r.elapsed) h += ` <span class="d-badge elapsed">${r.elapsed}ms</span>`;
+
+  // アクションボタン
+  h += '<div class="d-card-actions">';
+  h += `<button class="d-mini-btn" onclick="deepDiveCard(${idx})">💬 深掘り</button>`;
+  h += `<button class="d-mini-btn" onclick="reanalyzeCard(${idx})">🔄 再解析</button>`;
+  h += `<button class="d-mini-btn" onclick="copyResult(${idx})">📋</button>`;
+  h += '</div></div>';
+
+  if (r.capturedImage) {
+    h += `<img class="d-thumb" src="${r.capturedImage}">`;
+  }
+
+  const mainText = r.analysis || r.nextSteps || '';
+  const { conclusion, detail } = splitConclusionDetail(mainText);
+
+  if (conclusion) {
+    h += `<div class="d-conclusion"><div class="d-conclusion-title">💡 結論</div><div class="d-conclusion-text">${esc(conclusion)}</div></div>`;
+  }
+
+  const hasDetail = detail || (r.analysis && r.nextSteps) || r.deepAnalysis;
+  if (hasDetail) {
+    const did = 'dd-' + idx;
+    h += `<div class="d-toggle" onclick="toggleCol('${did}')"><span class="arrow" id="arrow-${did}">▶</span> 詳細を見る</div>`;
+    h += `<div class="d-collapse" id="${did}">`;
+    if (detail) h += `<div class="d-section"><div class="d-section-title analysis">🧠 分析</div>${esc(detail)}</div>`;
+    if (r.analysis && r.nextSteps) h += `<div class="d-section"><div class="d-section-title nextsteps">✨ 次にやること</div>${esc(r.nextSteps)}</div>`;
+    if (r.deepAnalysis) h += `<div class="d-section"><div class="d-section-title deep">🔬 深掘り</div>${esc(r.deepAnalysis)}</div>`;
+    h += '</div>';
+  }
+
+  // 追加質問の履歴
+  if (r.followups && r.followups.length > 0) {
+    r.followups.forEach(f => {
+      const provLabel = { claude: 'Claude', chatgpt: 'GPT', gemini: 'Gemini' }[f.provider] || '';
+      h += `<div class="d-followup-block"><div class="d-fq">❓ ${esc(f.question)}</div>`;
+      h += `<div class="d-fa">${esc(f.answer)} <span class="d-fa-badge" style="background:${
+        f.provider==='claude'?'#d97706':f.provider==='chatgpt'?'#10a37f':'#4285f4'
+      }">${provLabel}</span></div></div>`;
+    });
+  }
+
+  // カード別追加質問
+  h += `<div class="d-followup-row">`;
+  h += `<input class="d-followup-input" id="fq-${idx}" placeholder="このカードについて追加質問..." onkeydown="if(event.key==='Enter'){event.preventDefault();askCardFollowup(${idx})}">`;
+  h += `<button class="d-followup-btn" id="fqbtn-${idx}" onclick="askCardFollowup(${idx})">質問</button>`;
+  h += `</div>`;
+
+  if (r.ocr) {
+    const label = r.isAudio ? '🎤 文字起こし全文' : '📝 OCRテキスト';
+    const tid = 'dt-' + idx;
+    h += `<div class="d-toggle" onclick="toggleCol('${tid}')"><span class="arrow" id="arrow-${tid}">▶</span> ${label}</div>`;
+    h += `<div class="d-collapse" id="${tid}"><div class="d-section"><div class="d-section-title transcript">${label}</div>${esc(r.ocr)}</div></div>`;
+  }
+
+  return h;
+}
+
+// ══════════════════════════════════════
+// カード別追加質問（選択中のAIで回答）
+// ══════════════════════════════════════
+async function askCardFollowup(idx) {
+  const input = document.getElementById(`fq-${idx}`);
+  const btn = document.getElementById(`fqbtn-${idx}`);
+  if (!input || !input.value.trim()) return;
+
+  const question = input.value.trim();
+  input.value = '';
+  btn.disabled = true;
+
+  const r = results[idx];
+  r.followups.push({ question, answer: '回答中...', provider: desktopAI });
+  renderResults();
+
+  try {
+    const res = await fetch(`${BACKEND_URL}/followup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ocr_text: r.ocr || '',
+        previous_analysis: r.analysis || r.nextSteps || '',
+        question: question,
+        provider: desktopAI,
+      }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    r.followups[r.followups.length - 1].answer = data.answer;
+  } catch (err) {
+    r.followups[r.followups.length - 1].answer = `エラー: ${err.message}`;
+  }
+  renderResults();
+}
+
+// ══════════════════════════════════════
+// カードアクション
+// ══════════════════════════════════════
+function deepDiveCard(idx) {
+  const r = results[idx];
+  chatContext = { ocr: r.ocr || '', analysis: r.analysis || r.nextSteps || '' };
+  document.getElementById('chatContextLabel').textContent =
+    `📎 カード#${idx+1} のコンテキスト付き（${desktopAI}で回答）`;
+  document.getElementById('chatInput').focus();
+  document.getElementById('chatInput').placeholder = 'このカードについて質問...';
+  showToast('💬 コンテキストをセット — チャットで質問してください');
+}
+
+async function reanalyzeCard(idx) {
+  const r = results[idx];
+  if (!r.ocr && !r.capturedImage) { showToast('再解析するデータがありません'); return; }
+
+  showToast(`🔄 ${desktopAI} で再解析中...`);
+
+  try {
+    if (r.capturedImage) {
+      // 画像ありの場合: /analyze で再解析
+      const b64 = r.capturedImage.split(',')[1];
+      const res = await fetch(`${BACKEND_URL}/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image_base64: b64, prompt: null, provider: desktopAI }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      const timeStr = new Date().toLocaleTimeString();
+      addDesktopResult({
+        time: timeStr, elapsed: data.elapsed_ms,
+        ocr: data.ocr_text, analysis: data.analysis,
+        nextSteps: data.next_steps, deepAnalysis: data.deep_analysis,
+        capturedImage: r.capturedImage,
+        speedMode: 'normal', provider: desktopAI,
+        followups: [], isDesktop: true,
+      });
+    } else {
+      // テキストのみ: followupとして再分析
+      const res = await fetch(`${BACKEND_URL}/followup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ocr_text: r.ocr || '',
+          previous_analysis: r.analysis || r.nextSteps || '',
+          question: '改めてこの内容を分析し、結論・次にやること・注意点をまとめてください',
+          provider: desktopAI,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      r.followups.push({
+        question: `🔄 ${desktopAI} で再解析`,
+        answer: data.answer,
+        provider: desktopAI,
+      });
+      renderResults();
+    }
+    showToast('✅ 再解析完了');
+  } catch (err) {
+    showToast(`❌ 再解析失敗: ${err.message}`);
+  }
+}
+
+// ══════════════════════════════════════
+// デスクトップ画像アップロード
+// ══════════════════════════════════════
+function onDesktopFileSelect(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    uploadedImageB64 = e.target.result.split(',')[1];
+    document.getElementById('uploadPreview').src = e.target.result;
+    document.getElementById('uploadPreview').classList.add('show');
+    document.getElementById('clearUploadBtn').style.display = '';
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearUpload() {
+  uploadedImageB64 = null;
+  document.getElementById('uploadPreview').classList.remove('show');
+  document.getElementById('clearUploadBtn').style.display = 'none';
+  document.getElementById('desktopFileInput').value = '';
+}
+
+// ══════════════════════════════════════
+// AIチャット（右パネル）
+// ══════════════════════════════════════
+async function sendChat() {
+  const input = document.getElementById('chatInput');
+  const message = input.value.trim();
+  if (!message && !uploadedImageB64) return;
+
+  input.value = '';
+  document.getElementById('chatSendBtn').disabled = true;
+
+  // ユーザーメッセージ表示
+  const userMsg = message || '🖼️ 画像を解析';
+  addChatMessage('user', userMsg);
+
+  // AI応答
+  const aiMsgIdx = addChatMessage('ai', '回答中...', true);
+
+  try {
+    let answer;
+
+    if (uploadedImageB64) {
+      // 画像付き → /analyze
+      const res = await fetch(`${BACKEND_URL}/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image_base64: uploadedImageB64,
+          prompt: message || null,
+          provider: desktopAI,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      answer = '';
+      if (data.analysis) answer += data.analysis + '\n\n';
+      if (data.next_steps) answer += data.next_steps;
+      if (data.deep_analysis) answer += '\n\n' + data.deep_analysis;
+      if (!answer) answer = data.ocr_text;
+
+      // 結果カードにも追加
+      addDesktopResult({
+        time: new Date().toLocaleTimeString(), elapsed: data.elapsed_ms,
+        ocr: data.ocr_text, analysis: data.analysis,
+        nextSteps: data.next_steps, deepAnalysis: data.deep_analysis,
+        capturedImage: 'data:image/jpeg;base64,' + uploadedImageB64,
+        speedMode: 'normal', provider: desktopAI,
+        followups: [], isDesktop: true,
+      });
+      clearUpload();
+
+    } else if (chatContext) {
+      // コンテキスト付き追加質問
+      const res = await fetch(`${BACKEND_URL}/followup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ocr_text: chatContext.ocr,
+          previous_analysis: chatContext.analysis,
+          question: message,
+          provider: desktopAI,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      answer = data.answer;
+
+    } else {
+      // テキストのみの質問 → followup（汎用）
+      const res = await fetch(`${BACKEND_URL}/followup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ocr_text: '',
+          previous_analysis: chatHistory.slice(-4).map(m => m.text).join('\n'),
+          question: message,
+          provider: desktopAI,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      answer = data.answer;
+    }
+
+    updateChatMessage(aiMsgIdx, answer);
+
+  } catch (err) {
+    updateChatMessage(aiMsgIdx, `エラー: ${err.message}`);
+  }
+
+  document.getElementById('chatSendBtn').disabled = false;
+  // コンテキストは使い切ったらクリア
+  chatContext = null;
+  document.getElementById('chatContextLabel').textContent = '';
+  document.getElementById('chatInput').placeholder = 'AIに質問...';
+}
+
+function addChatMessage(role, text, loading = false) {
+  const container = document.getElementById('chatMessages');
+  // 空状態のテキストを消す
+  const empty = container.querySelector('.chat-empty');
+  if (empty) empty.remove();
+
+  const idx = chatHistory.length;
+  chatHistory.push({ role, text, provider: role === 'ai' ? desktopAI : null });
+
+  const div = document.createElement('div');
+  div.className = `chat-msg ${role}` + (loading ? ' loading' : '');
+  div.id = `chat-msg-${idx}`;
+
+  if (role === 'ai') {
+    const provLabels = { claude: 'Claude', chatgpt: 'ChatGPT', gemini: 'Gemini' };
+    div.innerHTML = `<span class="msg-provider ${desktopAI}">${provLabels[desktopAI]}</span><span class="msg-body">${esc(text)}</span>`;
+  } else {
+    div.innerHTML = `<span class="msg-body">${esc(text)}</span>`;
+  }
+
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+  return idx;
+}
+
+function updateChatMessage(idx, text) {
+  chatHistory[idx].text = text;
+  const div = document.getElementById(`chat-msg-${idx}`);
+  if (div) {
+    div.classList.remove('loading');
+    const body = div.querySelector('.msg-body');
+    if (body) body.innerHTML = esc(text);
+  }
+  document.getElementById('chatMessages').scrollTop =
+    document.getElementById('chatMessages').scrollHeight;
+}
+
+// ══════════════════════════════════════
+// ユーティリティ
+// ══════════════════════════════════════
+function splitConclusionDetail(text) {
+  if (!text) return { conclusion: '', detail: '' };
+  const concMatch = text.match(/【結論】([\s\S]*?)(?:\n---|\n【[^結])/);
+  if (concMatch) {
+    const conclusion = concMatch[1].trim();
+    const detailStart = text.indexOf('---', text.indexOf('【結論】'));
+    let detail = '';
+    if (detailStart >= 0) detail = text.substring(detailStart + 3).trim();
+    else {
+      const afterConc = text.substring(text.indexOf(conclusion) + conclusion.length).trim();
+      detail = afterConc;
+    }
+    return { conclusion, detail };
+  }
+  const lines = text.split('\n').filter(l => l.trim());
+  if (lines.length <= 3) return { conclusion: text.trim(), detail: '' };
+  return { conclusion: lines.slice(0, 3).join('\n'), detail: lines.slice(3).join('\n') };
+}
+
+function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>') : ''; }
+
+function toggleCol(id) {
+  const el = document.getElementById(id);
+  const arrow = document.getElementById('arrow-' + id);
+  if (el) el.classList.toggle('show');
+  if (arrow) arrow.classList.toggle('open');
+}
+
+function copyResult(idx) {
+  const r = results[idx];
+  const mainText = r.analysis || r.nextSteps || '';
+  const text = mainText + (r.ocr ? '\n\n---\n' + r.ocr : '');
+  navigator.clipboard.writeText(text).then(() => showToast('📋 コピーしました'));
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+if ('Notification' in window && Notification.permission === 'default') {
+  Notification.requestPermission();
+}
+</script>
+</body>
+</html>

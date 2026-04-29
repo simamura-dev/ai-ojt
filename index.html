@@ -183,6 +183,26 @@
 
   .next-steps-box { background: #1c2a1c; border-left: 3px solid #4ade80; border-radius: 8px; padding: 10px; margin-bottom: 8px; }
 
+  /* ── 結論ブロック ── */
+  .conclusion-box {
+    background: linear-gradient(135deg, #1a2a3a, #1a1a2e);
+    border-left: 3px solid #ffd166;
+    border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;
+  }
+  .conclusion-title { font-size: 11px; font-weight: 700; color: #ffd166; margin-bottom: 4px; }
+  .conclusion-text { font-size: 14px; line-height: 1.7; color: #fff; white-space: pre-wrap; font-weight: 500; }
+
+  /* ── 詳細展開 ── */
+  .detail-toggle {
+    display: flex; align-items: center; gap: 6px; color: #888; font-size: 11px;
+    cursor: pointer; padding: 6px 0; user-select: none; transition: color 0.2s;
+  }
+  .detail-toggle:hover { color: #ccc; }
+  .detail-toggle .arrow { transition: transform 0.3s; display: inline-block; }
+  .detail-toggle .arrow.open { transform: rotate(90deg); }
+  .detail-content { display: none; animation: slideUp 0.3s ease-out; }
+  .detail-content.show { display: block; }
+
   .body-text { font-size: 13px; line-height: 1.6; color: #e5e5e5; white-space: pre-wrap; }
 
   .followup-block { margin: 6px 0; padding-left: 10px; border-left: 2px solid #444; }
@@ -271,6 +291,78 @@
   .vp-retake { background: #3a3a3a; color: #fff; }
   .vp-analyze { background: #4ade80; color: #000; }
 
+  /* ── 同期パネル ── */
+  .sync-panel {
+    display: none; flex-shrink: 0; background: #111;
+    padding: 14px; text-align: center; border-bottom: 1px solid #222;
+  }
+  .sync-panel.show { display: block; }
+  .sync-panel-inner {
+    max-width: 300px; margin: 0 auto;
+  }
+  .sync-status {
+    font-size: 12px; font-weight: 600; color: #4a90e2; margin-bottom: 8px;
+  }
+  .sync-qr {
+    display: inline-block; background: #fff; padding: 8px; border-radius: 8px; margin-bottom: 6px;
+  }
+  .sync-qr canvas, .sync-qr img { display: block; }
+  .sync-id {
+    font-family: monospace; font-size: 20px; font-weight: 700;
+    color: #4a90e2; letter-spacing: 3px;
+  }
+
+  /* ── 音声録音UI ── */
+  .audio-area {
+    display: none; flex-direction: column; align-items: center;
+    background: #111; padding: 20px 16px; gap: 12px; flex-shrink: 0;
+  }
+  .audio-area.show { display: flex; }
+  .audio-visual {
+    width: 100%; max-width: 320px; height: 80px; background: #0a0a0a;
+    border-radius: 10px; overflow: hidden; border: 1px solid #222;
+  }
+  .audio-visual canvas { width: 100%; height: 100%; }
+  .audio-status { font-size: 12px; color: #888; text-align: center; }
+  .audio-timer {
+    font-size: 32px; font-weight: 700; color: #fff; font-family: monospace;
+    letter-spacing: 2px;
+  }
+  .audio-controls { display: flex; gap: 12px; }
+  .audio-rec-btn {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 28px; border: none; border-radius: 30px;
+    font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s;
+    background: #e74c3c; color: #fff;
+  }
+  .audio-rec-btn:hover { background: #c0392b; }
+  .audio-rec-btn.recording { background: #333; }
+  .audio-rec-btn.recording:hover { background: #444; }
+  .audio-rec-icon { font-size: 18px; }
+  .audio-rec-btn.recording .audio-rec-icon { animation: recBlink 1s infinite; }
+
+  .audio-preview {
+    display: none; width: 100%; max-width: 400px;
+    flex-direction: column; gap: 10px; margin-top: 8px;
+  }
+  .audio-preview.show { display: flex; }
+  .audio-name-row {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .audio-preview-actions {
+    display: flex; gap: 8px; justify-content: center;
+  }
+
+  /* 音声結果カードの特別スタイル */
+  .task-list { margin: 0; padding: 0 0 0 18px; }
+  .task-list li {
+    font-size: 13px; color: #e5e5e5; line-height: 1.8;
+    list-style: none; position: relative; padding-left: 4px;
+  }
+  .task-list li::before {
+    content: '☐'; position: absolute; left: -18px; color: #4ade80; font-size: 14px;
+  }
+
   #ssFileInput { display: none; }
 
   /* ── プロンプト入力エリア ── */
@@ -325,6 +417,7 @@
   <button class="mode-btn" id="modeSS" onclick="setMode('screenshot')">🖼️ スクショ</button>
   <button class="mode-btn active" id="modeStill" onclick="setMode('still')">📷 連続撮影</button>
   <button class="mode-btn" id="modeVideo" onclick="setMode('video')">🎬 動画</button>
+  <button class="mode-btn" id="modeAudio" onclick="setMode('audio')">🎤 音声</button>
 </div>
 
 <!-- カメラプレビュー -->
@@ -372,6 +465,44 @@
   </div>
 </div>
 
+<!-- 音声録音エリア -->
+<div class="audio-area" id="audioArea">
+  <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+    <span class="ai-dot gemini" style="width:8px;height:8px"></span>
+    <span style="font-size:11px;color:#4285f4;font-weight:600">Gemini で音声解析</span>
+  </div>
+  <div class="audio-visual">
+    <canvas id="audioCanvas" width="300" height="80"></canvas>
+  </div>
+  <div class="audio-status" id="audioStatus">🎤 録音ボタンを押して開始</div>
+  <div class="audio-timer" id="audioTimer">00:00</div>
+  <div class="audio-controls">
+    <button class="audio-rec-btn" id="audioRecBtn" onclick="toggleAudioRecording()">
+      <span class="audio-rec-icon" id="audioRecIcon">⏺</span>
+      <span id="audioRecLabel">録音開始</span>
+    </button>
+  </div>
+  <!-- 録音後のプレビュー -->
+  <div class="audio-preview" id="audioPreview">
+    <audio id="audioPlayback" controls style="width:100%;margin-bottom:8px"></audio>
+    <div class="audio-name-row">
+      <label style="font-size:11px;color:#aaa">自分の名前:</label>
+      <input type="text" id="audioUserName" class="followup-input" placeholder="例: 今村" style="max-width:160px">
+    </div>
+    <div style="background:#1a1a2e;border-radius:8px;padding:8px 10px;margin-top:6px;font-size:10px;color:#888;line-height:1.6">
+      📋 自動解析内容:<br>
+      1. 会議の決定事項（ToDo）<br>
+      2. 議論になったが保留された点<br>
+      3. 次回までに準備すべきこと<br>
+      4. あなたの担当タスク PICK UP
+    </div>
+    <div class="audio-preview-actions">
+      <button class="vp-retake" onclick="retakeAudio()">🔄 撮り直す</button>
+      <button class="vp-analyze" onclick="analyzeAudio()">🧠 Gemini で解析</button>
+    </div>
+  </div>
+</div>
+
 <!-- 処理中バー（コンパクト） -->
 <div class="processing-bar" id="processingBar">
   <div class="spinner-sm"></div>
@@ -416,6 +547,22 @@
       <span>自動</span>
       <div class="toggle-switch" id="autoToggle" onclick="toggleAuto()"></div>
     </div>
+    <div class="sync-toggle" style="display:flex;align-items:center;gap:6px;margin-left:auto">
+      <span style="font-size:11px;color:#aaa">🖥️同期</span>
+      <div class="toggle-switch" id="syncToggle" onclick="toggleSync()"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 同期パネル（QRコード表示） -->
+<div class="sync-panel" id="syncPanel">
+  <div class="sync-panel-inner">
+    <div class="sync-status" id="syncStatus">🖥️ デスクトップ同期: ON</div>
+    <div style="font-size:11px;color:#4ade80;margin-bottom:6px">PCでQRコードをスキャン ↓</div>
+    <div class="sync-qr" id="syncQr"></div>
+    <div style="font-size:10px;color:#888;margin:6px 0 2px">または下のIDをPCで入力:</div>
+    <div class="sync-id" id="syncId"></div>
+    <div class="sync-url" id="syncUrl" style="font-size:9px;color:#555;word-break:break-all;margin-top:4px"></div>
   </div>
 </div>
 
@@ -433,10 +580,12 @@ let autoTimer = null;
 let resultList = [];
 let currentDeviceIdx = -1;
 let videoDevices = [];
-let currentMode = 'still'; // 'still' | 'video' | 'screenshot'
+let currentMode = 'still'; // 'still' | 'video' | 'screenshot' | 'audio'
 let screenshotBase64 = null;
 let speedMode = 'normal'; // 'fast' | 'normal'
 let aiProvider = 'claude'; // 'claude' | 'chatgpt' | 'gemini'
+let syncEnabled = false;
+let syncSessionId = null;
 
 // 動画録画
 let isRecording = false;
@@ -446,6 +595,17 @@ let recordedFrames = []; // { base64, dataUrl, timestamp }
 const VIDEO_MAX_SECONDS = 60;
 const VIDEO_CAPTURE_INTERVAL = 3000; // 3秒ごとにフレームキャプチャ
 let videoCaptureTimer = null;
+
+// 音声録音
+let audioMediaRecorder = null;
+let audioChunks = [];
+let audioStream = null;
+let audioRecStartTime = 0;
+let audioRecTimer = null;
+let audioBlob = null;
+let audioAnalyserNode = null;
+let audioAnimFrame = null;
+const AUDIO_MAX_SECONDS = 300; // 5分
 
 // 撮影キュー
 let captureQueue = []; // { id, base64, dataUrl, status: 'pending'|'analyzing'|'done', result, selected }
@@ -561,10 +721,32 @@ function setMode(mode) {
     autoWrap.style.display = 'none';
     btn.textContent = '🎬 録画スタート (max 60s)';
     analyzeBtn.classList.remove('show');
-    // 録画中なら停止
     if (isRecording) stopVideoRecording();
     document.getElementById('videoPreviewArea').classList.remove('show');
     document.getElementById('videoRecBar').classList.remove('show');
+    document.getElementById('audioArea').classList.remove('show');
+  } else if (mode === 'audio') {
+    document.getElementById('modeAudio').classList.add('active');
+    cam.className = 'camera-area hidden';
+    ss.classList.remove('show');
+    autoWrap.style.display = 'none';
+    btn.style.display = 'none';
+    analyzeBtn.classList.remove('show');
+    document.getElementById('audioArea').classList.add('show');
+    document.getElementById('videoPreviewArea').classList.remove('show');
+    document.getElementById('videoRecBar').classList.remove('show');
+    // 音声モードではAIセレクター非表示（Gemini固定）
+    document.getElementById('aiSelector').style.display = 'none';
+    if (autoTimer) { toggleAuto(); }
+    return;
+  }
+
+  btn.style.display = '';
+  document.getElementById('audioArea').classList.remove('show');
+  document.getElementById('aiSelector').style.display = ''; // AIセレクター復帰
+  // 音声録音中なら停止
+  if (audioMediaRecorder && audioMediaRecorder.state === 'recording') {
+    stopAudioRecording();
   }
 }
 
@@ -1077,8 +1259,8 @@ function startVideoRecording() {
   videoCaptureTimer = setInterval(captureVideoFrame, VIDEO_CAPTURE_INTERVAL);
 }
 
-function captureVideoFrame() {
-  if (!isRecording || !cameraStream) return;
+function captureVideoFrame(force) {
+  if ((!force && !isRecording) || !cameraStream) return;
   const base64 = captureFrame();
   const dataUrl = 'data:image/jpeg;base64,' + base64;
   const elapsed = ((Date.now() - recordingStartTime) / 1000).toFixed(1);
@@ -1105,7 +1287,7 @@ function stopVideoRecording() {
 
   // 最後のフレームも追加
   if (cameraStream) {
-    captureVideoFrame();
+    captureVideoFrame(true);
   }
 
   const btn = document.getElementById('captureBtn');
@@ -1220,6 +1402,202 @@ async function analyzeVideoFrames() {
 }
 
 // ══════════════════════════════════════
+// 音声録音
+// ══════════════════════════════════════
+function toggleAudioRecording() {
+  if (audioMediaRecorder && audioMediaRecorder.state === 'recording') {
+    stopAudioRecording();
+  } else {
+    startAudioRecording();
+  }
+}
+
+async function startAudioRecording() {
+  try {
+    audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    alert('マイクにアクセスできません: ' + err.message);
+    return;
+  }
+
+  audioChunks = [];
+  audioBlob = null;
+  audioRecStartTime = Date.now();
+
+  // MediaRecorder
+  audioMediaRecorder = new MediaRecorder(audioStream, { mimeType: 'audio/webm;codecs=opus' });
+  audioMediaRecorder.ondataavailable = (e) => {
+    if (e.data.size > 0) audioChunks.push(e.data);
+  };
+  audioMediaRecorder.onstop = () => {
+    audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+    showAudioPreview();
+  };
+  audioMediaRecorder.start(1000); // 1秒ごとにchunk
+
+  // UI更新
+  const btn = document.getElementById('audioRecBtn');
+  btn.classList.add('recording');
+  document.getElementById('audioRecIcon').textContent = '⏹';
+  document.getElementById('audioRecLabel').textContent = '録音停止';
+  document.getElementById('audioStatus').textContent = '🔴 録音中...';
+  document.getElementById('audioStatus').style.color = '#e74c3c';
+  document.getElementById('audioPreview').classList.remove('show');
+
+  // タイマー
+  updateAudioTimer();
+  audioRecTimer = setInterval(() => {
+    const elapsed = (Date.now() - audioRecStartTime) / 1000;
+    if (elapsed >= AUDIO_MAX_SECONDS) {
+      stopAudioRecording();
+      return;
+    }
+    updateAudioTimer();
+  }, 500);
+
+  // 波形表示
+  startAudioVisualizer();
+}
+
+function stopAudioRecording() {
+  if (audioMediaRecorder && audioMediaRecorder.state === 'recording') {
+    audioMediaRecorder.stop();
+  }
+  if (audioStream) {
+    audioStream.getTracks().forEach(t => t.stop());
+    audioStream = null;
+  }
+  clearInterval(audioRecTimer);
+  audioRecTimer = null;
+  cancelAnimationFrame(audioAnimFrame);
+
+  // UI更新
+  const btn = document.getElementById('audioRecBtn');
+  btn.classList.remove('recording');
+  document.getElementById('audioRecIcon').textContent = '⏺';
+  document.getElementById('audioRecLabel').textContent = '録音開始';
+  document.getElementById('audioStatus').textContent = '✅ 録音完了';
+  document.getElementById('audioStatus').style.color = '#4ade80';
+}
+
+function updateAudioTimer() {
+  const elapsed = Math.floor((Date.now() - audioRecStartTime) / 1000);
+  const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
+  const ss = String(elapsed % 60).padStart(2, '0');
+  document.getElementById('audioTimer').textContent = `${mm}:${ss}`;
+}
+
+function startAudioVisualizer() {
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const source = audioCtx.createMediaStreamSource(audioStream);
+  audioAnalyserNode = audioCtx.createAnalyser();
+  audioAnalyserNode.fftSize = 256;
+  source.connect(audioAnalyserNode);
+
+  const canvas = document.getElementById('audioCanvas');
+  const canvasCtx = canvas.getContext('2d');
+  const bufferLength = audioAnalyserNode.frequencyBinCount;
+  const dataArray = new Uint8Array(bufferLength);
+
+  function draw() {
+    audioAnimFrame = requestAnimationFrame(draw);
+    audioAnalyserNode.getByteFrequencyData(dataArray);
+
+    canvasCtx.fillStyle = '#0a0a0a';
+    canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const barWidth = (canvas.width / bufferLength) * 2.5;
+    let x = 0;
+    for (let i = 0; i < bufferLength; i++) {
+      const barHeight = (dataArray[i] / 255) * canvas.height * 0.9;
+      const hue = (i / bufferLength) * 60 + 200; // 青〜紫
+      canvasCtx.fillStyle = `hsla(${hue}, 80%, 60%, 0.8)`;
+      canvasCtx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+      x += barWidth + 1;
+    }
+  }
+  draw();
+}
+
+function showAudioPreview() {
+  if (!audioBlob) return;
+  const url = URL.createObjectURL(audioBlob);
+  document.getElementById('audioPlayback').src = url;
+  document.getElementById('audioPreview').classList.add('show');
+
+  const elapsed = Math.floor((Date.now() - audioRecStartTime) / 1000);
+  document.getElementById('audioStatus').textContent =
+    `✅ 録音完了: ${Math.floor(elapsed/60)}分${elapsed%60}秒`;
+}
+
+function retakeAudio() {
+  audioBlob = null;
+  audioChunks = [];
+  document.getElementById('audioPreview').classList.remove('show');
+  document.getElementById('audioStatus').textContent = '🎤 録音ボタンを押して開始';
+  document.getElementById('audioStatus').style.color = '#888';
+  document.getElementById('audioTimer').textContent = '00:00';
+
+  // 波形キャンバスクリア
+  const canvas = document.getElementById('audioCanvas');
+  const canvasCtx = canvas.getContext('2d');
+  canvasCtx.fillStyle = '#0a0a0a';
+  canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+}
+
+async function analyzeAudio() {
+  if (!audioBlob || isProcessing) return;
+  isProcessing = true;
+
+  const bar = document.getElementById('processingBar');
+  bar.classList.add('show');
+  document.getElementById('procText').textContent = '🎤 Gemini で音声解析中...';
+  document.getElementById('procCount').textContent = 'Gemini';
+
+  const userName = document.getElementById('audioUserName').value || null;
+
+  try {
+    // FormDataで送信（Gemini固定）
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'recording.webm');
+    formData.append('provider', 'gemini');
+    if (userName) formData.append('user_name', userName);
+
+    document.getElementById('procText').textContent = '🎤 文字起こし＋要約＋タスク抽出中...';
+
+    const res = await fetch(`${BACKEND_URL}/analyze-audio`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    const data = await res.json();
+
+    const timeStr = new Date().toLocaleTimeString();
+    addResult({
+      time: timeStr, elapsed: data.elapsed_ms,
+      ocr: data.transcript,
+      analysis: data.summary,
+      nextSteps: null, deepAnalysis: null,
+      speedMode: 'normal', provider: 'gemini',
+      followups: [],
+      isAudio: true,
+    });
+
+    document.getElementById('audioStatus').textContent = '✅ 解析完了';
+
+  } catch (err) {
+    alert(`音声解析失敗: ${err.message}`);
+  } finally {
+    bar.classList.remove('show');
+    isProcessing = false;
+  }
+}
+
+// ══════════════════════════════════════
 // 追加質問
 // ══════════════════════════════════════
 async function askFollowup(idx) {
@@ -1268,6 +1646,8 @@ function addResult(r) {
   resultList.unshift(r);
   if (resultList.length > 30) resultList.pop();
   renderResults();
+  // デスクトップに同期
+  pushToDesktop(r);
 }
 
 function renderResults() {
@@ -1292,14 +1672,44 @@ function renderResults() {
       h += `<div style="margin-bottom:8px;text-align:center"><img src="${r.capturedImage}" style="max-width:100%;max-height:100px;border-radius:6px;border:1px solid #333"></div>`;
     }
 
-    if (r.analysis) h += `<div class="section"><div class="section-title analysis">🧠 分析</div><div class="body-text">${esc(r.analysis)}</div></div>`;
-    if (r.nextSteps) h += `<div class="next-steps-box"><div class="section-title nextsteps">✨ 次にやること</div><div class="body-text">${esc(r.nextSteps)}</div></div>`;
-    if (r.deepAnalysis) h += `<div class="section" style="border-left:3px solid #a78bfa;padding-left:10px;border-bottom:none"><div class="section-title" style="color:#a78bfa">🔬 深掘り</div><div class="body-text">${esc(r.deepAnalysis)}</div></div>`;
+    // 結論＋詳細の分離表示
+    const mainText = r.analysis || r.nextSteps || '';
+    const { conclusion, detail } = splitConclusionDetail(mainText);
+    const detailId = 'r' + idx;
+
+    // 結論（常に表示）
+    if (conclusion) {
+      h += `<div class="conclusion-box"><div class="conclusion-title">💡 結論</div><div class="conclusion-text">${esc(conclusion)}</div></div>`;
+    }
+
+    // 詳細（折りたたみ）
+    const detailParts = [];
+    if (detail) detailParts.push(detail);
+    // analysisとnextStepsが両方ある場合、nextStepsを詳細に含める
+    if (r.analysis && r.nextSteps) {
+      const ns = splitConclusionDetail(r.nextSteps);
+      if (ns.conclusion && !conclusion.includes(ns.conclusion.substring(0, 20))) {
+        detailParts.push(r.nextSteps);
+      }
+    }
+    if (r.deepAnalysis) detailParts.push(r.deepAnalysis);
+
+    if (detailParts.length > 0 || detail) {
+      h += `<div class="detail-toggle" onclick="toggleDetail('${detailId}')"><span class="arrow" id="arrow-${detailId}">▶</span> 詳細を見る</div>`;
+      h += `<div class="detail-content" id="detail-${detailId}">`;
+      if (detail) h += `<div class="section"><div class="body-text">${esc(detail)}</div></div>`;
+      if (r.analysis && r.nextSteps) {
+        h += `<div class="next-steps-box"><div class="section-title nextsteps">✨ 次にやること</div><div class="body-text">${esc(r.nextSteps)}</div></div>`;
+      }
+      if (r.deepAnalysis) h += `<div class="section" style="border-left:3px solid #a78bfa;padding-left:10px;border-bottom:none"><div class="section-title" style="color:#a78bfa">🔬 深掘り</div><div class="body-text">${esc(r.deepAnalysis)}</div></div>`;
+      h += `</div>`;
+    }
 
     r.followups.forEach(f => { h += `<div class="followup-block"><div class="q-text">❓ ${esc(f.question)}</div><div class="a-text">${esc(f.answer)}</div></div>`; });
 
     h += `<div class="followup-row"><input class="followup-input" id="followup-${idx}" placeholder="追加質問..." onkeydown="if(event.key==='Enter'){event.preventDefault();askFollowup(${idx})}"><button class="ask-btn" onclick="askFollowup(${idx})">質問</button></div>`;
-    h += `<div class="ocr-toggle" onclick="this.nextElementSibling.classList.toggle('show')">📝 テキスト ▼</div><div class="ocr-text">${esc(r.ocr)}</div>`;
+    const ocrLabel = r.isAudio ? '🎤 文字起こし全文' : '📝 テキスト';
+    h += `<div class="ocr-toggle" onclick="this.nextElementSibling.classList.toggle('show')">${ocrLabel} ▼</div><div class="ocr-text">${esc(r.ocr)}</div>`;
 
     if (latest && currentMode !== 'screenshot') h += `<div class="expand-cam-btn" onclick="document.getElementById('cameraArea').className='camera-area full'">📷 カメラを大きく表示</div>`;
     h += `</div>`;
@@ -1308,6 +1718,39 @@ function renderResults() {
 }
 
 function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>') : ''; }
+
+// 結論と詳細を分離する
+function splitConclusionDetail(text) {
+  if (!text) return { conclusion: '', detail: '' };
+  // 【結論】...---...残り or 【結論】...【次に...
+  const concMatch = text.match(/【結論】([\s\S]*?)(?:\n---|\n【[^結])/);
+  if (concMatch) {
+    const conclusion = concMatch[1].trim();
+    const detailStart = text.indexOf('---', text.indexOf('【結論】'));
+    let detail = '';
+    if (detailStart >= 0) {
+      detail = text.substring(detailStart + 3).trim();
+    } else {
+      // ---がない場合、【結論】以降の最初の【セクション】から
+      const afterConc = text.substring(text.indexOf(conclusion) + conclusion.length).trim();
+      detail = afterConc;
+    }
+    return { conclusion, detail };
+  }
+  // 【結論】タグがない場合は最初の3行を結論扱い
+  const lines = text.split('\n').filter(l => l.trim());
+  if (lines.length <= 3) return { conclusion: text.trim(), detail: '' };
+  return { conclusion: lines.slice(0, 3).join('\n'), detail: lines.slice(3).join('\n') };
+}
+
+function toggleDetail(id) {
+  const content = document.getElementById('detail-' + id);
+  const arrow = document.getElementById('arrow-' + id);
+  if (content) {
+    content.classList.toggle('show');
+    arrow && arrow.classList.toggle('open');
+  }
+}
 
 // ══════════════════════════════════════
 // 向き検知 & カメラ自動リサイズ
@@ -1344,6 +1787,77 @@ if (screen.orientation) {
 
 // 初期状態をセット
 updateOrientation();
+
+// ══════════════════════════════════════
+// デスクトップ同期
+// ══════════════════════════════════════
+async function toggleSync() {
+  const t = document.getElementById('syncToggle');
+  t.classList.toggle('on');
+  syncEnabled = t.classList.contains('on');
+
+  const panel = document.getElementById('syncPanel');
+  if (syncEnabled) {
+    // セッション作成
+    try {
+      const res = await fetch(`${BACKEND_URL}/sync/session`, { method: 'POST' });
+      const data = await res.json();
+      syncSessionId = data.session_id;
+
+      // QRコード生成
+      const desktopUrl = `${window.location.origin}/desktop?session=${syncSessionId}`;
+      document.getElementById('syncId').textContent = syncSessionId;
+      document.getElementById('syncUrl').textContent = desktopUrl;
+      document.getElementById('syncStatus').textContent = '🖥️ デスクトップ同期: ON';
+      document.getElementById('syncStatus').style.color = '#4ade80';
+
+      // QRコード（Google Charts APIを使用）
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(desktopUrl)}`;
+      document.getElementById('syncQr').innerHTML = `<img src="${qrUrl}" width="160" height="160" alt="QR">`;
+
+      panel.classList.add('show');
+    } catch (e) {
+      alert('同期セッション作成に失敗: ' + e.message);
+      t.classList.remove('on');
+      syncEnabled = false;
+    }
+  } else {
+    syncSessionId = null;
+    panel.classList.remove('show');
+  }
+}
+
+async function pushToDesktop(resultData) {
+  if (!syncEnabled || !syncSessionId) return;
+  try {
+    // capturedImageが大きすぎる場合はサムネイル化
+    const pushData = { ...resultData };
+    if (pushData.capturedImage && pushData.capturedImage.length > 200000) {
+      // 大きい画像はリサイズ
+      pushData.capturedImage = await resizeImageForSync(pushData.capturedImage, 320);
+    }
+    await fetch(`${BACKEND_URL}/sync/${syncSessionId}/push`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(pushData),
+    });
+  } catch (e) { /* 同期失敗は無視 */ }
+}
+
+function resizeImageForSync(dataUrl, maxWidth) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxWidth / img.width);
+      const c = document.createElement('canvas');
+      c.width = img.width * scale;
+      c.height = img.height * scale;
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      resolve(c.toDataURL('image/jpeg', 0.6));
+    };
+    img.src = dataUrl;
+  });
+}
 
 // ══════════════════════════════════════
 // 初期化

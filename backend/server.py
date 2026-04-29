@@ -11,17 +11,21 @@ Claude / ChatGPT / Gemini を切り替えて使える。
     uvicorn server:app --host 0.0.0.0 --port 8000 --reload
 """
 
+import asyncio
 import base64
+import json
 import os
+import tempfile
 import time
+import uuid
 from pathlib import Path
 from typing import Optional
 
 import cv2
 import numpy as np
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 
@@ -33,6 +37,7 @@ BLUR_THRESHOLD = 50.0
 SIMILARITY_THRESHOLD = 0.95
 
 HTML_PATH = Path(__file__).parent.parent / "index.html"
+DESKTOP_HTML_PATH = Path(__file__).parent.parent / "desktop.html"
 
 # AIプロバイダー設定
 AI_PROVIDERS = {
@@ -252,12 +257,13 @@ def suggest_next_steps(ocr_text: str, analysis: Optional[str], provider: str = "
         system_prompt=(
             "あなたはOJTメンターだ。現場で手を止めずに読める短い回答を返せ。\n"
             "以下のフォーマットで回答しろ:\n\n"
-            "【これは何か】1行で画面の状況を要約\n\n"
+            "【結論】画面の状況と最も重要なポイントを3行以内で。1行目=これは何か、2行目=今やるべきこと、3行目=注意点（あれば）\n\n"
+            "---\n\n"
             "【次にやること】最大3個、各1行で\n"
             "1. アクション → 具体的な手順\n\n"
             "【注意・危険】あれば1〜2行。なければ省略\n\n"
             "【参考リンク】関連する公式ドキュメントやStack OverflowのURLがあれば記載。なければ省略\n\n"
-            "長文禁止。箇条書き中心。合計200文字以内を目指せ。"
+            "ルール: 【結論】は必ず最初に書け。---で区切ってから詳細を書け。"
         ),
         user_message=context,
     )
@@ -276,14 +282,15 @@ def analyze_with_context(ocr_text: str, prompt: str, history: list[dict], provid
         system_prompt=(
             "あなたはOJTメンターだ。画面に映っている内容を特定し、質問に対して簡潔に答えろ。\n"
             "以下のフォーマットで回答しろ:\n\n"
-            "【これは何か】1行で画面の状況を要約（何のツール/画面/作業をしているか）\n\n"
-            "【回答】質問への回答を3〜5行以内で。結論ファースト。コード例は最小限（3行以内）\n\n"
+            "【結論】質問への回答の核心を3行以内で。1行目=画面の状況、2行目=質問への直接回答、3行目=最も重要な注意点（あれば）\n\n"
+            "---\n\n"
+            "【詳細】補足説明やコード例（必要な場合のみ、5行以内）\n\n"
             "【次にやること】最大3個、各1行で次のアクションを提示\n\n"
             "【注意・危険】あれば1〜2行。なければ省略\n\n"
             "【参考リンク】公式ドキュメントのURLがあれば記載。なければ省略\n\n"
             "ルール:\n"
-            "- 「〜と思います」等の冗長表現禁止\n"
-            "- 合計300文字以内を目指せ"
+            "- 【結論】は必ず最初に書け。---で区切ってから詳細を書け\n"
+            "- 「〜と思います」等の冗長表現禁止"
         ),
         user_message=f"画面:\n{ocr_text}\n{context}\n質問: {prompt}",
     )
@@ -305,12 +312,14 @@ def analyze_image_fast(frame_b64: str, prompt: Optional[str] = None, provider: s
         system_prompt=(
             "あなたはOJTメンターだ。画面に映っている内容を特定し、簡潔に答えろ。\n"
             "以下のフォーマットで回答しろ:\n\n"
-            "【これは何か】1行で画面の状況を要約\n\n"
-            + ("【回答】質問に3〜5行以内で回答。結論ファースト\n\n" if prompt else "")
-            + "【次にやること】最大3個、各1行で\n\n"
+            "【結論】最も重要なポイントを3行以内で。1行目=これは何か、2行目="
+            + ("質問への直接回答" if prompt else "今やるべきこと")
+            + "、3行目=注意点（あれば）\n\n"
+            "---\n\n"
+            "【次にやること】最大3個、各1行で\n\n"
             "【注意・危険】あれば1〜2行。なければ省略\n\n"
             "【参考リンク】関連URLがあれば記載。なければ省略\n\n"
-            "ルール: 冗長表現禁止。合計300文字以内。"
+            "ルール: 【結論】は必ず最初に書け。---で区切ってから詳細を書け。冗長表現禁止。"
         ),
         user_message=context,
     )
@@ -358,6 +367,82 @@ def answer_followup(ocr_text: str, previous_analysis: Optional[str], question: s
 
 
 # ──────────────────────────────────────────────
+# 音声処理（Gemini専用）
+# ──────────────────────────────────────────────
+def transcribe_audio_gemini(audio_bytes: bytes) -> str:
+    """Geminiで音声を文字起こし"""
+    gemini_key = os.environ.get("GEMINI_API_KEY")
+    if not gemini_key:
+        raise ValueError("音声文字起こしにはGEMINI_API_KEYが必要です")
+
+    client = get_gemini_client()
+    audio_b64 = base64.b64encode(audio_bytes).decode()
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=[
+            {"inline_data": {"mime_type": "audio/webm", "data": audio_b64}},
+            "この音声を正確に文字起こしせよ。話者が複数いる場合は「話者A:」「話者B:」のように区別せよ。テキストのみ出力。説明不要。",
+        ],
+    )
+    return response.text
+
+
+def analyze_audio_gemini(audio_bytes: bytes, user_name: Optional[str] = None) -> dict:
+    """Geminiで音声から直接 文字起こし＋要約＋タスク抽出を一括実行"""
+    gemini_key = os.environ.get("GEMINI_API_KEY")
+    if not gemini_key:
+        raise ValueError("音声解析にはGEMINI_API_KEYが必要です")
+
+    client = get_gemini_client()
+    audio_b64 = base64.b64encode(audio_bytes).decode()
+
+    name_context = ""
+    if user_name:
+        name_context = f"※ 本アプリのユーザー名は「{user_name}」です。この人物に関連するタスクを特にPICK UPすること。\n\n"
+
+    prompt = (
+        f"{name_context}"
+        "以下の録音内容を文字起こしした上で、次の4点にまとめてください。\n"
+        "すべて箇条書きで記載すること。\n\n"
+        "【結論】この会議・会話の要点を3行以内で\n\n"
+        "---\n\n"
+        "1. 会議の決定事項（ToDo）\n"
+        "   - 決定した内容を箇条書きで列挙\n"
+        "   - 各項目に担当者と期限があれば記載\n\n"
+        "2. 議論になったが保留された点\n"
+        "   - 結論が出なかった議題を箇条書きで列挙\n"
+        "   - 保留の理由があれば簡潔に付記\n\n"
+        "3. 次回までに準備すべきこと\n"
+        "   - 次回会議・作業までに必要な準備を箇条書きで列挙\n"
+        "   - 担当者があれば記載\n\n"
+        "4. あなたの担当タスク（PICK UP）\n"
+        "   - 本アプリのユーザーが担当するタスクをピックアップ\n"
+        "   - 何をすればいいかを具体的にまとめる\n"
+        "   - 期限があれば記載\n"
+        "   - 該当なしの場合は「明示的な担当タスクなし」と記載\n\n"
+        "ルール:\n"
+        "- 推測でタスクを作らない。発言内容に基づくこと\n"
+        "- 冗長な文章禁止。箇条書き中心\n"
+        "- 【結論】は必ず最初に書くこと"
+    )
+
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=[
+            {"inline_data": {"mime_type": "audio/webm", "data": audio_b64}},
+            prompt,
+        ],
+    )
+
+    summary = response.text
+
+    # 文字起こしも別途取得（全文確認用）
+    transcript = transcribe_audio_gemini(audio_bytes)
+
+    return {"transcript": transcript, "summary": summary}
+
+
+# ──────────────────────────────────────────────
 # スキーマ
 # ──────────────────────────────────────────────
 class AnalyzeRequest(BaseModel):
@@ -400,6 +485,50 @@ class FollowupResponse(BaseModel):
     answer: str
     provider: str = "claude"
     elapsed_ms: int
+
+
+class AudioAnalyzeResponse(BaseModel):
+    transcript: str
+    summary: str
+    provider: str = "gemini"
+    elapsed_ms: int
+
+
+# ──────────────────────────────────────────────
+# 共有セッション（スマホ↔デスクトップ同期）
+# ──────────────────────────────────────────────
+class SharedSession:
+    def __init__(self, session_id: str):
+        self.session_id = session_id
+        self.results: list[dict] = []
+        self.listeners: list[asyncio.Queue] = []  # SSEリスナー
+        self.created_at = time.time()
+
+    def add_result(self, result: dict):
+        result["id"] = str(uuid.uuid4())[:8]
+        result["timestamp"] = time.time()
+        self.results.append(result)
+        # 全リスナーに通知
+        for q in self.listeners:
+            q.put_nowait(result)
+
+    def add_listener(self) -> asyncio.Queue:
+        q: asyncio.Queue = asyncio.Queue()
+        self.listeners.append(q)
+        return q
+
+    def remove_listener(self, q: asyncio.Queue):
+        if q in self.listeners:
+            self.listeners.remove(q)
+
+
+shared_sessions: dict[str, SharedSession] = {}
+
+
+def get_or_create_shared_session(session_id: str) -> SharedSession:
+    if session_id not in shared_sessions:
+        shared_sessions[session_id] = SharedSession(session_id)
+    return shared_sessions[session_id]
 
 
 # ──────────────────────────────────────────────
@@ -553,6 +682,33 @@ async def analyze_upload(file: UploadFile = File(...), prompt: Optional[str] = F
     )
 
 
+@app.post("/analyze-audio", response_model=AudioAnalyzeResponse)
+async def analyze_audio_endpoint(
+    file: UploadFile = File(...),
+    provider: Optional[str] = Form("gemini"),
+    user_name: Optional[str] = Form(None),
+):
+    """音声解析（Gemini専用）: 文字起こし＋要約＋タスク抽出を一括実行"""
+    start = time.time()
+
+    audio_bytes = await file.read()
+    if len(audio_bytes) == 0:
+        raise HTTPException(status_code=400, detail="音声データが空です")
+
+    # Gemini一括処理（音声→文字起こし＋要約＋タスク抽出）
+    try:
+        result = analyze_audio_gemini(audio_bytes, user_name=user_name)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"音声解析失敗: {e}")
+
+    return AudioAnalyzeResponse(
+        transcript=result["transcript"],
+        summary=result["summary"],
+        provider="gemini",
+        elapsed_ms=int((time.time() - start) * 1000),
+    )
+
+
 @app.post("/followup", response_model=FollowupResponse)
 async def followup(req: FollowupRequest):
     start = time.time()
@@ -562,6 +718,72 @@ async def followup(req: FollowupRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"回答失敗: {e}")
     return FollowupResponse(answer=answer, provider=provider, elapsed_ms=int((time.time() - start) * 1000))
+
+
+# ──────────────────────────────────────────────
+# 共有セッション エンドポイント（スマホ↔デスクトップ同期）
+# ──────────────────────────────────────────────
+
+@app.post("/sync/session")
+async def create_sync_session():
+    """新しい共有セッションを作成"""
+    sid = str(uuid.uuid4())[:6]
+    get_or_create_shared_session(sid)
+    return {"session_id": sid}
+
+
+@app.post("/sync/{session_id}/push")
+async def push_result(session_id: str, request: Request):
+    """スマホから結果をプッシュ"""
+    sess = get_or_create_shared_session(session_id)
+    data = await request.json()
+    sess.add_result(data)
+    return {"ok": True, "count": len(sess.results)}
+
+
+@app.get("/sync/{session_id}/results")
+async def get_sync_results(session_id: str):
+    """セッションの全結果を取得"""
+    if session_id not in shared_sessions:
+        return JSONResponse(content={"results": []})
+    sess = shared_sessions[session_id]
+    return {"session_id": session_id, "results": sess.results}
+
+
+@app.get("/sync/{session_id}/stream")
+async def sse_stream(session_id: str):
+    """SSE: デスクトップがリアルタイムで結果を受信"""
+    sess = get_or_create_shared_session(session_id)
+    queue = sess.add_listener()
+
+    async def event_generator():
+        # 接続時に既存の結果を全て送信
+        for r in sess.results:
+            yield f"data: {json.dumps(r, ensure_ascii=False)}\n\n"
+        # 以降はリアルタイム
+        try:
+            while True:
+                try:
+                    result = await asyncio.wait_for(queue.get(), timeout=30)
+                    yield f"data: {json.dumps(result, ensure_ascii=False)}\n\n"
+                except asyncio.TimeoutError:
+                    yield f": keepalive\n\n"  # 接続維持
+        except asyncio.CancelledError:
+            sess.remove_listener(queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.get("/desktop", response_class=HTMLResponse)
+def serve_desktop():
+    """デスクトップビューを配信"""
+    if DESKTOP_HTML_PATH.exists():
+        return HTMLResponse(content=DESKTOP_HTML_PATH.read_text(encoding="utf-8"))
+    return HTMLResponse(content="<h1>desktop.html が見つかりません</h1>", status_code=404)
 
 
 @app.websocket("/ws/stream/{session_id}")
